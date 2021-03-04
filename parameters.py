@@ -1,0 +1,11 @@
+input_dir='/Users/hongxuan/Desktop/Postdoc/Seo/xgcatest'
+ngroup=2
+start_gstep=1
+period=1
+nsteps=1
+sml_tri_psi_weighting=True
+Nr=1000
+Nz=1000
+qi=1.60217662E-19#ion charge
+mi=2*1.67262192369E-27#ion mass
+sml_dt=3.951468E-7
