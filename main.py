@@ -31,7 +31,7 @@ worker_group=MPI.Group.Excl(MPI.Comm.Get_group(comm),manager_ranks)
 worker_comm=MPI.Comm.Create_group(comm,worker_group)
 
 #read from orbit.txt
-orbit.read(comm,worker_comm,is_manager)
+orbit.read(input_dir,comm,worker_comm,is_manager)
 #determine the range of nodes needed
 if not(is_manager):
   #workers read mesh information
