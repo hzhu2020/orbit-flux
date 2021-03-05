@@ -1,4 +1,5 @@
 input_dir='/Users/hongxuan/Desktop/Postdoc/Seo/xgcatest'
+mpi_io_test=False
 ngroup=2
 start_gstep=1
 period=1

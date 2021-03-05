@@ -2,7 +2,7 @@ import numpy as np
 from math import floor
 from mpi4py import MPI
 from parameters import input_dir,ngroup,start_gstep,period,nsteps,sml_tri_psi_weighting,\
-             Nr,Nz,qi,mi,sml_dt
+             Nr,Nz,qi,mi,sml_dt,mpi_io_test
 import f0
 import orbit
 import grid
@@ -55,21 +55,34 @@ else:
 min_node=group_comm.allreduce(min_node,op=MPI.MIN)
 max_node=group_comm.allreduce(max_node,op=MPI.MAX)
 
-#main loop start here
-for istep in range(nsteps):
-  if (istep==0)and(comm_rank==0):
-    output=open('orbit_loss_collision.txt','w')
+#write a header to output
+if comm_rank==0:
+  output=open('./orbit_loss_collision.txt','w')
+  output.write('%8d%8d%8d%8d\n'%(orbit.nmu,orbit.nPphi,orbit.nH,nsteps))
+  output.close()
+  if (mpi_io_test):
+    output=open('./mpi_io_collision.txt','w')
     output.write('%8d%8d%8d%8d\n'%(orbit.nmu,orbit.nPphi,orbit.nH,nsteps))
     output.close()
+
+if not(is_manager)and(mpi_io_test):
+  goutput=MPI.File.Open(worker_comm,"./mpi_io_collision.txt",MPI.MODE_WRONLY)
+  offset_heading=33
+  num_lines=floor(orbit.nmu*orbit.nPphi*orbit.nH/4)+1
+  offset_step=orbit.nmu*orbit.nPphi*orbit.nH*20+num_lines
+
+#main loop start here
+for istep in range(nsteps):
   gstep=start_gstep+istep*period
   fname=input_dir+'/xgc.orbit.collision.'+'{:0>5d}'.format(gstep)+'.bp'
   #managers read f0
-  if (is_manager):
+  if(is_manager):
     f0.read(fname,min_node,max_node)
     status=MPI.Status()
 
   dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1),dtype=float)
   if not(is_manager):
+    if mpi_io_test: text=''
     for iorb in range(orbit.iorb1,orbit.iorb2+1):
       imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
       mu=orbit.mu_orb[imu_orb-1]
@@ -109,9 +122,18 @@ for istep in range(nsteps):
         df0g_orb=df0g_orb*orbit.dt_orb[iorb-1]/sml_dt
         dF_orb[iorb-orbit.iorb1]=dF_orb[iorb-orbit.iorb1]+df0g_orb*(mi/np.pi/2)**1.5/1.6022E-19
       #end for it_orb
+      if (mpi_io_test):
+        text=text+"{:19.10E}".format(dF_orb[iorb-orbit.iorb1])+' '
+        if iorb%4==0: text=text+'\n'
     #end for iorb
+    if (mpi_io_test):
+      data=np.empty(len(text),dtype=np.int8)
+      data[:]=bytearray(text,encoding='utf-8')
+      offset_local=(orbit.iorb1-1)*20+floor((orbit.iorb1-1)/4)
+      goutput.Write_at_all(offset_heading+offset_step*istep+offset_local,data)
+    #notify manager that work is done
     group_comm.send([-1,1,int],dest=group_size-1,tag=0)
-  else:
+  else:#if manager
     finished=np.zeros(group_size-1,dtype=int)
     while sum(finished)<group_size-1:
       data=group_comm.recv(source=MPI.ANY_SOURCE,tag=MPI.ANY_TAG,status=status)
@@ -157,3 +179,4 @@ for istep in range(nsteps):
       output.close()
   comm.barrier()
 #end for istep
+if not(is_manager)and(mpi_io_test): goutput.Close()
