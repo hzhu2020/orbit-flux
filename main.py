@@ -1,4 +1,5 @@
 import numpy as np
+from time import time
 from math import floor
 from mpi4py import MPI
 from parameters import input_dir,ngroup,start_gstep,period,nsteps,sml_tri_psi_weighting,\
@@ -74,9 +75,11 @@ if not(is_manager)and(mpi_io_test):
 #main loop start here
 for istep in range(nsteps):
   gstep=start_gstep+istep*period
+  if(comm_rank==0): print('collisional flux, gstep=',gstep)
   fname=input_dir+'/xgc.orbit.collision.'+'{:0>5d}'.format(gstep)+'.bp'
   #managers read f0
   if(is_manager):
+    t_beg=time()
     f0.read(fname,min_node,max_node)
     status=MPI.Status()
 
@@ -124,7 +127,7 @@ for istep in range(nsteps):
       #end for it_orb
       if (mpi_io_test):
         text=text+"{:19.10E}".format(dF_orb[iorb-orbit.iorb1])+' '
-        if iorb%4==0: text=text+'\n'
+        if (iorb%4==0)or(iorb==orbit.nmu*orbit.nPphi*orbit.nH): text=text+'\n'
     #end for iorb
     if (mpi_io_test):
       data=np.empty(len(text),dtype=np.int8)
@@ -155,6 +158,8 @@ for istep in range(nsteps):
         data=int(data[0])
         if data!=-1: print('Something wrong with communications.')
         finished[inq_id]=1
+    t_end=time()
+    print('group',manager_comm.Get_rank(),'finished in cpu time',(t_end-t_beg)/60.0,'s')
   #write outputs
   iorb1_list=group_comm.gather(orbit.iorb1,root=group_size-1)
   iorb2_list=group_comm.gather(orbit.iorb2,root=group_size-1)
