@@ -3,11 +3,11 @@ import numpy as np
 from math import floor
 from scipy.interpolate import griddata
 
-def read(input_dir,Nr,Nz):
+def read(xgc_dir,Nr,Nz):
   global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,R,Z,\
          Bmag,tempi2d,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp
-  fname=input_dir+'/xgc.mesh.bp'
+  fname=xgc_dir+'/xgc.mesh.bp'
   fid=ad.open(fname,'r')
   rz=fid.read('/coordinates/values')
   psi_rz=fid.read('psi')
@@ -22,17 +22,17 @@ def read(input_dir,Nr,Nz):
   nd=fid.read('nd')
   fid.close()
 
-  fname=input_dir+'/xgc.equil.bp'
+  fname=xgc_dir+'/xgc.equil.bp'
   fid=ad.open(fname,'r')
   psix=fid.read('eq_x_psi')
   fid.close()
 
-  fname=input_dir+'/xgc.bfield.bp'
+  fname=xgc_dir+'/xgc.bfield.bp'
   fid=ad.open(fname,'r')
   B=fid.read('bfield')
   fid.close()
 
-  fname=input_dir+'/xgc.f0.mesh.bp'
+  fname=xgc_dir+'/xgc.f0.mesh.bp'
   fid=ad.open(fname,'r')
   tempi=fid.read('f0_T_ev')
   tempi=np.squeeze(tempi)#important for dimension match

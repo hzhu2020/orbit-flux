@@ -1,7 +1,7 @@
 import adios2 as ad
 import numpy as np
 
-def read(fname,min_node,max_node):
+def read(idx,fname,min_node,max_node):
   global df0g
   fid=ad.open(fname,'r')
   nnode=fid.read('nnode')

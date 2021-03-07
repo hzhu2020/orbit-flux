@@ -1,8 +1,8 @@
 import numpy as np
 from parameters import ngroup
 
-def read(input_dir,comm,worker_comm,is_manager):
-  fname=input_dir+'/orbit.txt'
+def read(orbit_dir,comm,worker_comm,is_manager):
+  fname=orbit_dir+'/orbit.txt'
   global nmu,nH,nPphi,nt,iorb1,iorb2,\
         steps_orb,dt_orb,mu_orb,R_orb,Z_orb,vp_orb
   if comm.Get_rank()==0:
