@@ -2,8 +2,9 @@ import numpy as np
 from time import time
 from math import floor
 from mpi4py import MPI
-from parameters import xgc_dir,orbit_dir,ngroup,start_gstep,period,nsteps,sml_tri_psi_weighting,\
-             Nr,Nz,qi,mi,sml_dt,mpi_io_test,diag_collision,diag_turbulence,diag_neutral,diag_source
+from parameters import xgc_dir,orbit_dir,ngroup,start_gstep,period,nsteps,mpi_io_test,\
+                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,qi,mi,sml_dt,\
+                       diag_collision,diag_turbulence,diag_neutral,diag_source
 import f0
 import orbit
 import grid
@@ -12,6 +13,12 @@ comm = MPI.COMM_WORLD
 comm_size = comm.Get_size()
 comm_rank = comm.Get_rank()
 
+if (comm_size==1):
+  print('Stop: at least two processes are needed.')
+  exit()
+if (comm_size<=ngroup):
+  if (comm_rank==0): print('Stop: number of processes must be larger than number of groups.')
+  exit()
 if (comm_size%ngroup!=0):
   if (comm_rank==0): print('Stop: number of processes must be divisible by ngroup!',flush=True)
   exit()
@@ -36,6 +43,7 @@ orbit.read(orbit_dir,comm,worker_comm,is_manager)
 if not(is_manager):
   #workers read mesh information
   grid.read(xgc_dir,Nr,Nz)
+  if (diag_turbulence)and(worker_comm.Get_rank()==0): grid.grid_deriv_init(xgc_dir)
   min_node=grid.nnode
   max_node=0
   norb=orbit.iorb2-orbit.iorb1+1
@@ -89,7 +97,7 @@ for idx in range(1,5):
   #main diagnosis loop start here
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
-    if(comm_rank==0): print(source+'flux, gstep=',gstep,flush=True)
+    if(comm_rank==0): print(source+' flux, gstep=',gstep,flush=True)
     if idx==1:
       fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
     else:
@@ -99,6 +107,13 @@ for idx in range(1,5):
       t_beg=time()
       f0.read(idx,fname,min_node,max_node)
       status=MPI.Status()
+    #workers prepare turbulence electric field
+    elif idx==1:
+      if worker_comm.Get_rank()==0:
+        Er_node,Ez_node=grid.Eturb(xgc_dir,gstep,sml_grad_psitheta)
+      else:
+        Er_node,Ez_node=[None]*2
+      Er_node,Ez_node=worker_comm.bcast((Er_node,Ez_node),root=0)
 
     dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1),dtype=float)
     if not(is_manager):
@@ -133,10 +148,11 @@ for idx in range(1,5):
                 ivp_f0=floor(wvp[0])
                 wvp[1]=wvp[0]-float(ivp_f0)
                 wvp[0]=1.0-wvp[1]
-                #(different from Fortran version) let manager do the calculations
-                data=np.array([node-min_node,imu_f0,ivp_f0+grid.f0_nvp,wmu[0],wmu[1],wvp[0],wvp[1]],dtype=float)
+                #communication with manager
+                data=np.array([node-min_node,imu_f0,ivp_f0+grid.f0_nvp],dtype=float)
                 group_comm.send(data,dest=group_size-1,tag=iorb)
-                value=group_comm.recv(source=group_size-1,tag=iorb)
+                tmp=group_comm.recv(source=group_size-1,tag=iorb)
+                value=tmp[0,0]*wvp[0]*wmu[0]+tmp[0,1]*wvp[0]*wmu[1]+tmp[1,0]*wvp[1]*wmu[0]+tmp[1,1]*wvp[1]*wmu[1]
                 df0g_orb=df0g_orb+value*p[i]/np.sqrt(2*mu*B)
           #end if itr
           df0g_orb=df0g_orb*orbit.dt_orb[iorb-1]/sml_dt
@@ -163,20 +179,15 @@ for idx in range(1,5):
           node=int(data[0])
           imu=int(data[1])
           ivp=int(data[2])
-          wmu=np.zeros((2,),dtype=float)
-          wvp=np.zeros((2,),dtype=float)
-          wmu[0:2]=data[3:5]
-          wvp[0:2]=data[5:7]
           tmp=np.zeros((2,2),dtype=float)
           tmp[0:2,0:2]=f0.df0g[ivp:ivp+2,node,imu:imu+2]
-          value=tmp[0,0]*wvp[0]*wmu[0]+tmp[0,1]*wvp[0]*wmu[1]+tmp[1,0]*wvp[1]*wmu[0]+tmp[1,1]*wvp[1]*wmu[1]
-          group_comm.send(value,dest=inq_id,tag=tag)
+          group_comm.send(tmp,dest=inq_id,tag=tag)
         if tag==0:
-          data=int(data[0])
-          if data!=-1: print('Something wrong with communications.',flush=True)
+          node=int(data[0])
+          if node!=-1: print('Something wrong with communications.',flush=True)
           finished[inq_id]=1
       t_end=time()
-      print('group',manager_comm.Get_rank(),'finished in cpu time',(t_end-t_beg)/60.0,'s',flush=True)
+      print('group',manager_comm.Get_rank(),'finished in cpu time',(t_end-t_beg)/60.0,'min',flush=True)
     #end if not manager
     #write outputs
     iorb1_list=group_comm.gather(orbit.iorb1,root=group_size-1)

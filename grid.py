@@ -61,6 +61,34 @@ def read(xgc_dir,Nr,Nz):
   Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
   Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
 
+def grid_deriv_init(xgc_dir):
+  fname=xgc_dir+'/xgc.grad_rz.bp'
+  fid=ad.open(fname,'r')
+  global basis,nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
+  basis=fid.read('basis')
+  nelement_r=fid.read('nelement_r')
+  eindex_r=fid.read('eindex_r')
+  value_r=fid.read('value_r')
+  nelement_z=fid.read('nelement_z')
+  eindex_z=fid.read('eindex_z')
+  value_z=fid.read('value_z')
+
+  nelement_r=np.transpose(nelement_r)
+  eindex_r=np.transpose(eindex_r)
+  value_r=np.transpose(value_r)
+  nelement_z=np.transpose(nelement_z)
+  eindex_z=np.transpose(eindex_z)
+  value_z=np.transpose(value_z)
+  fid.close()
+
+def Eturb(xgc_dir,gstep,psi_only): 
+  fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+  fid=ad.open(fname,'r')
+  dpot=fid.read('dpot')
+  Ex=np.zeros((nnode,),dtype=float)
+  Ey=np.zeros((nnode,),dtype=float)
+  return Ex,Ey
+
 def b_interpol(xy):
   return TwoD(R,Z,Bmag,xy[0],xy[1]) 
 
