@@ -6,7 +6,7 @@ from scipy.interpolate import griddata
 def read(xgc_dir,Nr,Nz):
   global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,R,Z,\
-         Bmag,tempi2d,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp
+         B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp
   fname=xgc_dir+'/xgc.mesh.bp'
   fid=ad.open(fname,'r')
   rz=fid.read('/coordinates/values')
@@ -54,17 +54,13 @@ def read(xgc_dir,Nr,Nz):
   rlin=np.linspace(min(rmesh),max(rmesh),Nr)
   zlin=np.linspace(min(zmesh),max(zmesh),Nz)
   R,Z=np.meshgrid(rlin,zlin)
-  tempi2d=griddata(rz,tempi,(R,Z),method='cubic')
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
-  Br=griddata(rz,B[:,0],(R,Z),method='cubic')
-  Bz=griddata(rz,B[:,1],(R,Z),method='cubic')
-  Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
-  Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
 
 def grid_deriv_init(xgc_dir):
+  global basis,nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
+
   fname=xgc_dir+'/xgc.grad_rz.bp'
   fid=ad.open(fname,'r')
-  global basis,nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
   basis=fid.read('basis')
   nelement_r=fid.read('nelement_r')
   eindex_r=fid.read('eindex_r')
@@ -80,23 +76,57 @@ def grid_deriv_init(xgc_dir):
   eindex_z=np.transpose(eindex_z)
   value_z=np.transpose(value_z)
   fid.close()
+  
+def additional_Bfield(xgc_dir): 
+  global nb_curl_nb
+  fname=xgc_dir+'/xgc.f0.mesh.bp'
+  fid=ad.open(fname,'r')
+  nb_curl_nb=fid.read('nb_curl_nb')
+  fid.close()
+  
+def read_dpot_orb(orbit_dir):
+  global dpot_orb
+  dpot_orb=np.zeros((nnode))
+  fname=orbit_dir+'/pot0m.txt'
+  fid=open(fname,'r')
+  dum=int(fid.readline(8))
+  if dum!=nnode:
+    print('Wrong nnode for pot0m.txt. Set dpot_orb=0.')
+    return
+  fid.readline(8)
+  for i in range(nnode):
+    value=fid.readline(19)
+    dpot_orb[i]=float(value)
+    fid.readline(1)
+  dum=int(fid.readline(8))
+  if dum!=-1:
+    print('Wrong file end for pot0m.txt. Set dpot_orb=0.')
+    dpot_orb[:]=0.0
+    return
 
-def Eturb(xgc_dir,gstep,psi_only): 
+  fid.close()
+  return
+
+def Eturb(xgc_dir,gstep,grad_psitheta,psi_only): 
   fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
   fid=ad.open(fname,'r')
   dpot=fid.read('dpot')
-  Ex=np.zeros((nnode,),dtype=float)
-  Ey=np.zeros((nnode,),dtype=float)
-  return Ex,Ey
-
-def b_interpol(xy):
-  return TwoD(R,Z,Bmag,xy[0],xy[1]) 
-
-def psi_interpol(xy):
-  return TwoD(R,Z,psi2d,xy[0],xy[1])
-
-def tempi_interpol(xy):
-  return TwoD(R,Z,tempi2d,xy[0],xy[1])
+  dpot=dpot-dpot_orb
+  Er=np.zeros((nnode,),dtype=float)
+  Ez=np.zeros((nnode,),dtype=float)
+  for i in range(nnode):
+    for j in range(nelement_r[i]):
+      ind=eindex_r[j,i]
+      Er[i]=Er[i]+dpot[ind-1]*value_r[j,i]
+    for j in range(nelement_z[i]):
+      ind=eindex_z[j,i]
+      Ez[i]=Ez[i]+dpot[ind-1]*value_z[j,i]
+  if grad_psitheta:
+    for i in range(nnode):
+      if (basis[i]==0)and(psi_only): Ez[i]==0
+  Er=-Er
+  Ez=-Ez
+  return Er,Ez
  
 def search_tr2(xy):
    itr=-1

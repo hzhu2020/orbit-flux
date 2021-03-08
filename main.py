@@ -3,7 +3,7 @@ from time import time
 from math import floor
 from mpi4py import MPI
 from parameters import xgc_dir,orbit_dir,ngroup,start_gstep,period,nsteps,mpi_io_test,\
-                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,qi,mi,sml_dt,\
+                       sml_tri_psi_weighting,sml_grad_psitheta,sml_invert_b,Nr,Nz,qi,mi,sml_dt,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source
 import f0
 import orbit
@@ -43,7 +43,12 @@ orbit.read(orbit_dir,comm,worker_comm,is_manager)
 if not(is_manager):
   #workers read mesh information
   grid.read(xgc_dir,Nr,Nz)
-  if (diag_turbulence)and(worker_comm.Get_rank()==0): grid.grid_deriv_init(xgc_dir)
+  if diag_turbulence:
+    grid.additional_Bfield(xgc_dir)
+    if worker_comm.Get_rank()==0:
+      grid.grid_deriv_init(xgc_dir)
+      grid.read_dpot_orb(orbit_dir)
+
   min_node=grid.nnode
   max_node=0
   norb=orbit.iorb2-orbit.iorb1+1
@@ -110,7 +115,7 @@ for idx in range(1,5):
     #workers prepare turbulence electric field
     elif idx==1:
       if worker_comm.Get_rank()==0:
-        Er_node,Ez_node=grid.Eturb(xgc_dir,gstep,sml_grad_psitheta)
+        Er_node,Ez_node=grid.Eturb(xgc_dir,gstep,sml_grad_psitheta,False)
       else:
         Er_node,Ez_node=[None]*2
       Er_node,Ez_node=worker_comm.bcast((Er_node,Ez_node),root=0)
@@ -123,6 +128,13 @@ for idx in range(1,5):
         mu=orbit.mu_orb[imu_orb-1]
         for it_orb in range(orbit.steps_orb[iorb-1]):
           df0g_orb=0.0
+          if idx==1:
+            E=np.zeros((3,),dtype=float)
+            dxdt=np.zeros((2,),dtype=float)
+            dvpdt=0.0
+            F_node=np.zeros((3,),dtype=float)
+            dFdvp=0.0
+
           r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
           z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
           vp=orbit.vp_orb[iorb-orbit.iorb1,it_orb]
@@ -131,11 +143,13 @@ for idx in range(1,5):
           if (itr>0):
             for i in range(3):
               node=grid.nd[i,itr-1]
-              B=grid.b_interpol([grid.rz[node-1,0],grid.rz[node-1,1]])
-              psi=grid.psi_interpol([grid.rz[node-1,0],grid.rz[node-1,1]])
-              tempi=grid.tempi_interpol([grid.rz[node-1,0],grid.rz[node-1,1]])*1.6022E-19
+              B=np.sqrt(grid.B[node-1,0]**2+grid.B[node-1,1]**2+grid.B[node-1,2]**2)
+              tempi=grid.tempi[node-1]*1.6022E-19
               mu_n=2*mu*B/tempi
               vp_n=vp/np.sqrt(tempi/mi)
+              if idx==1:
+                rho=mi*vp/qi/B
+                D=1.0/(1.0+rho*grid.nb_curl_nb[node-1])
               if (mu_n<grid.f0_smu_max**2)and(vp_n<grid.f0_vp_max)and(vp_n>=-grid.f0_vp_max):
                 wmu=np.zeros((2,),dtype=float)
                 wvp=np.zeros((2,),dtype=float)
@@ -213,5 +227,5 @@ for idx in range(1,5):
         output.close()
     comm.barrier()
   #end for istep
+  if not(is_manager)and(mpi_io_test): goutput.Close()
 #end for idx
-if not(is_manager)and(mpi_io_test): goutput.Close()
