@@ -5,7 +5,7 @@ from scipy.interpolate import griddata
 
 def read(xgc_dir,Nr,Nz):
   global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
-         guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,R,Z,\
+         guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp
   fname=xgc_dir+'/xgc.mesh.bp'
   fid=ad.open(fname,'r')
@@ -56,12 +56,23 @@ def read(xgc_dir,Nr,Nz):
   R,Z=np.meshgrid(rlin,zlin)
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
 
-def grid_deriv_init(xgc_dir):
-  global basis,nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
+def readf0(idx,fname,min_node,max_node):
+  global df0g
+  fid=ad.open(fname,'r')
+  nnode=fid.read('nnode')
+  nmu=fid.read('mudata')
+  nvp=fid.read('vpdata')
+  nnode=max_node-min_node+1
+  if idx==1:
+    df0g=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,nnode,nvp])
+  else:
+    df0g=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,nnode,nvp])
+  df0g=np.transpose(df0g)#[vp,node,mu] order as in Fortran XGC
 
+def grid_deriv_init(xgc_dir):
+  global nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
   fname=xgc_dir+'/xgc.grad_rz.bp'
   fid=ad.open(fname,'r')
-  basis=fid.read('basis')
   nelement_r=fid.read('nelement_r')
   eindex_r=fid.read('eindex_r')
   value_r=fid.read('value_r')
@@ -77,13 +88,33 @@ def grid_deriv_init(xgc_dir):
   value_z=np.transpose(value_z)
   fid.close()
   
-def additional_Bfield(xgc_dir): 
-  global nb_curl_nb
+def additional_Bfield(xgc_dir,Nr,Nz): 
+  global basis,nb_curl_nb,gradBr,gradBz,gradBphi,curlbr,curlbz,curlbphi
+  fname=xgc_dir+'/xgc.grad_rz.bp'
+  fid=ad.open(fname,'r')
+  basis=fid.read('basis')
+  fid.close()
+
   fname=xgc_dir+'/xgc.f0.mesh.bp'
   fid=ad.open(fname,'r')
   nb_curl_nb=fid.read('nb_curl_nb')
   fid.close()
   
+  Br=griddata(rz,B[:,0],(R,Z),method='cubic')
+  Bz=griddata(rz,B[:,1],(R,Z),method='cubic')
+  Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
+  Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
+  
+  br=Br/Bmag
+  bz=Bz/Bmag
+  bphi=Bphi/Bmag
+  curlbr2d,curlbz2d,curlbphi2d=Curl(rlin,zlin,br,bz,bphi,Nr,Nz)
+  curlbr=np.zeros((nnode),dtype=float)
+  curlbz=np.zeros((nnode),dtype=float)
+  for i in range(nnode):
+    curlbr[i]=TwoD(R,Z,curlbr2d,rz[i,0],rz[i,1])
+    curlbz[i]=TwoD(R,Z,curlbz2d,rz[i,0],rz[i,1])
+
 def read_dpot_orb(orbit_dir):
   global dpot_orb
   dpot_orb=np.zeros((nnode))
@@ -179,6 +210,33 @@ def t_coeff_mod(xy,itr,p):
     p[b-1]=p_temp*p[b-1]/t_temp
   return p 
 
+def Grad(r,z,fld,Nr,Nz):
+  dr=r[2]-r[1]
+  dz=z[2]-z[1]
+  gradr=np.nan*np.zeros((Nz,Nr),dtype=float)
+  gradz=np.nan*np.zeros((Nz,Nr),dtype=float)
+  gradphi=np.nan*np.zeros((Nz,Nr),dtype=float)
+  for i in range(1,Nz-1):
+    for j in range(1,Nr-1):
+      gradr[i,j]=(fld[i,j+1]-fld[i,j-1])/2/dr
+      gradz[i,j]=(fld[i+1,j]-fld[i-1,j])/2/dz
+      gradphi[i,j]=0.0 #assuming axisymmetry
+  return gradr,gradz,gradphi
+
+def Curl(r,z,fldr,fldz,fldphi,Nr,Nz):
+  #all calculations below assume axisymmetry
+  dr=r[2]-r[1]
+  dz=z[2]-z[1]
+  curlr=np.nan*np.zeros((Nz,Nr),dtype=float)
+  curlz=np.nan*np.zeros((Nz,Nr),dtype=float)
+  curlphi=np.nan*np.zeros((Nz,Nr),dtype=float)
+  for i in range(1,Nz-1):
+    for j in range(1,Nr-1):
+      curlr[i,j]=-(fldphi[i+1,j]-fldphi[i-1,j])/2/dz
+      curlphi[i,j]=(fldr[i+1,j]-fldr[i-1,j])/2/dz-(fldz[i,j+1]-fldz[i,j-1])/2/dr
+      curlz[i,j]=(r[j+1]*fldphi[i,j+1]-r[j-1]*fldphi[i,j-1])/2/dr/r[j]
+  return curlr,curlz,curlphi
+
 def TwoD(x2d,y2d,f2d,xin,yin):
   Ny,Nx=np.shape(x2d)
   x0=x2d[0,0]
@@ -196,3 +254,23 @@ def TwoD(x2d,y2d,f2d,xin,yin):
         +f2d[iy,ix+1]*(1-wy)*wx + f2d[iy+1,ix+1]*wy*wx
 
   return fout
+
+def gradF_orb(F,itr):
+  dFdx=np.zeros((2,),dtype=float)
+  r=np.zeros((3,),dtype=float)
+  z=np.zeros((3,),dtype=float)
+  for i in range(3):
+    node=nd[i,itr-1]
+    r[i]=rz[node-1,0]
+    z[i]=rz[node-1,1]
+
+  xsj=r[0]*(z[1]-z[2])+r[1]*(z[2]-z[0])+r[2]*(z[0]-z[1])
+  if (xsj==0.0):
+    print('Error: diag_orbit_loss at gradF_orb, xsj==0')
+    exit()
+    
+  dFdx[0]=F[0]*(z[1]-z[2])+F[1]*(z[2]-z[0])+F[2]*(z[0]-z[1])
+  dFdx[0]=dFdx[0]/xsj
+  dFdx[1]=F[0]*(r[2]-r[1])+F[1]*(r[0]-r[2])+F[2]*(r[1]-r[0])
+  dFdx[1]=dFdx[1]/xsj
+  return dFdx
