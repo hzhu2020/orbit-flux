@@ -2,8 +2,8 @@ import numpy as np
 from time import time
 from math import floor
 from mpi4py import MPI
-from parameters import xgc_dir,orbit_dir,ngroup,start_gstep,period,nsteps,mpi_io_test,\
-                       sml_tri_psi_weighting,sml_grad_psitheta,sml_invert_b,Nr,Nz,qi,mi,sml_dt,\
+from parameters import bp_read,xgc_dir,orbit_dir,ngroup,start_gstep,period,nsteps,mpi_io_test,\
+                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,qi,mi,sml_dt,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source
 import orbit
 import grid
@@ -36,8 +36,11 @@ manager_comm=MPI.Comm.Create_group(comm,manager_group)
 worker_group=MPI.Group.Excl(MPI.Comm.Get_group(comm),manager_ranks)
 worker_comm=MPI.Comm.Create_group(comm,worker_group)
 
-#read from orbit.txt
-orbit.read(orbit_dir,comm,worker_comm,is_manager)
+#read from orbit.txt or orbit.bp
+if bp_read:
+  orbit.readbp(orbit_dir,comm,worker_comm,is_manager)
+else:
+  orbit.read(orbit_dir,comm,worker_comm,is_manager)
 #determine the range of nodes needed
 if not(is_manager):
   #workers read mesh information

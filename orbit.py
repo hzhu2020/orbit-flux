@@ -97,6 +97,50 @@ def read(orbit_dir,comm,worker_comm,is_manager):
     if value!='      -1': print('Wrong end flag of orbit.txt')
     fid.close()
 
+def readbp(orbit_dir,comm,worker_comm,is_manager):
+  import adios2
+  fname=orbit_dir+'/orbit.bp'
+  global nmu,nH,nPphi,nt,iorb1,iorb2,\
+        steps_orb,dt_orb,mu_orb,R_orb,Z_orb,vp_orb
+  if comm.Get_rank()==0:
+    fid=adios2.open(fname,'r')
+    nmu=fid.read('nmu')
+    nPphi=fid.read('nPphi')
+    nH=fid.read('nH')
+    nt=fid.read('nt')
+    norb=nmu*nPphi*nH
+    mu_orb=np.zeros((nmu,),dtype=float)
+    dt_orb=np.zeros((norb,),dtype=float)
+    steps_orb=np.zeros((norb,),dtype=int)
+    mu_orb[:]=fid.read('mu_orb')
+    dt_orb[:]=fid.read('dt_orb')
+    steps_orb[:]=fid.read('steps_orb')
+    fid.close() 
+  else:
+    nmu,nPphi,nH,nt,mu_orb,dt_orb,steps_orb=[None]*7
+  
+  nmu,nPphi,nH,nt,mu_orb,dt_orb,steps_orb\
+    =comm.bcast((nmu,nPphi,nH,nt,mu_orb,dt_orb,steps_orb),root=0)
+  
+  norb=nmu*nPphi*nH
+  iorb1_list,iorb2_list=partition_orbit(norb,comm.Get_size())
+  norb_list=iorb2_list-iorb1_list+1
+  if is_manager:
+     iorb1=1
+     iorb2=norb
+  else:
+     iorb1=iorb1_list[worker_comm.Get_rank()]
+     iorb2=iorb2_list[worker_comm.Get_rank()]
+     mynorb=iorb2-iorb1+1
+     R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+     Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+     vp_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+     fid=adios2.open(fname,'r')
+     R_orb[:,:]=fid.read('R_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
+     Z_orb[:,:]=fid.read('Z_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
+     vp_orb[:,:]=fid.read('vp_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
+     fid.close()
+
 def partition_orbit(norb,size):
     num_workers=size-ngroup
     sum_steps=sum(steps_orb)
