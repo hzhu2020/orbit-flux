@@ -53,11 +53,10 @@ if not(is_manager):
 
   min_node=grid.nnode
   max_node=0
-  norb=orbit.iorb2-orbit.iorb1+1
-  for iorb in range(norb):
-    for it_orb in range(orbit.steps_orb[iorb]):
-      r=orbit.R_orb[iorb,it_orb]
-      z=orbit.Z_orb[iorb,it_orb]
+  for iorb in range(orbit.iorb1,orbit.iorb2+1):
+    for it_orb in range(orbit.steps_orb[iorb-1]):
+      r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
+      z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
       itr,p=grid.search_tr2([r,z])
       if itr>0:
         for i in range(3):
