@@ -182,8 +182,8 @@ for idx in range(1,5):
                 wvp[0]=1.0-wvp[1]
                 #communication with manager
                 data=np.array([node-min_node,imu_f0,ivp_f0+grid.f0_nvp],dtype=int)
-                group_comm.send(data,dest=group_size-1,tag=iorb)
-                tmp=group_comm.recv(source=group_size-1,tag=iorb)
+                group_comm.send(data,dest=group_size-1,tag=1)
+                tmp=group_comm.recv(source=group_size-1,tag=1)
                 value=tmp[0,0]*wvp[0]*wmu[0]+tmp[0,1]*wvp[0]*wmu[1]+tmp[1,0]*wvp[1]*wmu[0]+tmp[1,1]*wvp[1]*wmu[1]
                 if idx==1:
                   F_node[i]=value/np.sqrt(2*mu*B)
@@ -210,24 +210,26 @@ for idx in range(1,5):
         offset_local=(orbit.iorb1-1)*20+floor((orbit.iorb1-1)/4)
         goutput.Write_at_all(offset_heading+offset_step*istep+offset_local,data)
       #notify manager that work is done
-      group_comm.send([-1,1,int],dest=group_size-1,tag=0)
+      group_comm.send([-1],dest=group_size-1,tag=0)
     else:#if manager
       finished=np.zeros(group_size-1,dtype=int)
       while sum(finished)<group_size-1:
         data=group_comm.recv(source=MPI.ANY_SOURCE,tag=MPI.ANY_TAG,status=status)
         tag=status.Get_tag()
         inq_id=status.Get_source()
-        if tag>0:
+        if tag==1:
           node=int(data[0])
           imu=int(data[1])
           ivp=int(data[2])
           tmp=np.zeros((2,2),dtype=float)
           tmp[0:2,0:2]=grid.df0g[ivp:ivp+2,node,imu:imu+2]
           group_comm.send(tmp,dest=inq_id,tag=tag)
-        if tag==0:
+        elif tag==0:
           node=int(data[0])
-          if node!=-1: print('Something wrong with communications.',flush=True)
+          if node!=-1: print('Something wrong with communications: tag=',tag,'node=',node,flush=True)
           finished[inq_id]=1
+        else:
+          print('Something wrong with communications: tag=',tag,flush=True)
       t_end=time()
       print('group',manager_comm.Get_rank(),'finished in cpu time',(t_end-t_beg)/60.0,'min',flush=True)
     #end if not manager
