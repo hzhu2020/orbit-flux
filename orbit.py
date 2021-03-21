@@ -125,7 +125,6 @@ def readbp(orbit_dir,comm):
   norb_list=iorb2_list-iorb1_list+1
   iorb1=iorb1_list[rank]
   iorb2=iorb2_list[rank]
-  print(rank,iorb1,iorb2)
   mynorb=iorb2-iorb1+1
   R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
   Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
