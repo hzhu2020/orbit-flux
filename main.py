@@ -24,18 +24,27 @@ if diag_turbulence:
     grid.grid_deriv_init(xgc_dir)
     grid.read_dpot_orb(orbit_dir)
 
+t_beg=time()
 min_node=grid.nnode
 max_node=0
+mynorb=orbit.iorb2-orbit.iorb1+1
+itr_save=np.zeros((mynorb,orbit.nt),dtype=int)
+p_save=np.zeros((mynorb,orbit.nt,3),dtype=float)
 for iorb in range(orbit.iorb1,orbit.iorb2+1):
   for it_orb in range(orbit.steps_orb[iorb-1]):
     r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
     z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
     itr,p=grid.search_tr2([r,z])
+    if (sml_tri_psi_weighting)and(itr>0)and(max(p)<1.0): p=grid.t_coeff_mod([r,z],itr,p)
+    itr_save[iorb-orbit.iorb1,it_orb]=itr
+    p_save[iorb-orbit.iorb1,it_orb,:]=p[:]
     if itr>0:
       for i in range(3):
         node=grid.nd[i,itr-1]
         if (node>max_node): max_node=node
         if (node<min_node): min_node=node
+t_end=time()
+if rank==0: print('Preparing orbit locations took',(t_end-t_beg)/60.,'minutes',flush=True)
 #index loop starts here
 for idx in range(1,5):
   if (idx==1):
@@ -68,6 +77,7 @@ for idx in range(1,5):
 
   #main diagnosis loop start here
   tmp=np.zeros((2,2),dtype=float)
+  p=np.zeros((3,),dtype=float)
   for istep in range(nsteps):
     t_beg=time()
     gstep=start_gstep+istep*period
@@ -102,8 +112,8 @@ for idx in range(1,5):
         r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
         z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
         vp=orbit.vp_orb[iorb-orbit.iorb1,it_orb]
-        itr,p=grid.search_tr2([r,z])
-        if (sml_tri_psi_weighting)and(itr>0)and(max(p)<1.0): p=grid.t_coeff_mod([r,z],itr,p)
+        itr=itr_save[iorb-orbit.iorb1,it_orb]
+        p[:]=p_save[iorb-orbit.iorb1,it_orb,:]
         if (itr>0):
           for i in range(3):
             node=grid.nd[i,itr-1]
@@ -194,7 +204,7 @@ for idx in range(1,5):
       if istep==nsteps-1: output.write('%8d'%-1)
       output.close()
     t_end=time()
-    print('rank',rank,'finished in',(t_end-t_beg)/60.,'minutes')
+    print('rank',rank,'finished in',(t_end-t_beg)/60.,'minutes',flush=True)
   comm.barrier()
   #end for istep
   if (mpi_io_test): goutput.Close()
