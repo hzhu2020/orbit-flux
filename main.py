@@ -173,28 +173,29 @@ for idx in range(1,5):
       offset_local=(orbit.iorb1-1)*20+floor((orbit.iorb1-1)/4)
       goutput.Write_at_all(offset_heading+offset_step*istep+offset_local,data)
     #write outputs
-    iorb1_list=comm.gather(orbit.iorb1,root=group_size-1)
-    iorb2_list=comm.gather(orbit.iorb2,root=group_size-1)
-    if (is_manager):
+    iorb1_list=comm.gather(orbit.iorb1,root=0)
+    iorb2_list=comm.gather(orbit.iorb2,root=0)
+    if rank==0:
+      norb=orbit.nmu*orbit.nPphi*orbit.nH
+      dF_output=np.zeros((norb,),dtype=float)
       count=np.array(iorb2_list)-np.array(iorb1_list)+1
-      count[group_size-1]=0
       displ=np.array(iorb1_list)-1
     else:
-      displ,count=[None]*2
-    group_comm.Gatherv(dF_orb,[dF_orb,count,displ,MPI.DOUBLE],root=group_size-1)
-    if (is_manager):
-      dF_orb=manager_comm.reduce(dF_orb,op=MPI.SUM)
-      if(manager_comm.Get_rank()==0):
-        output=open(orbit_dir+'/orbit_loss_'+source+'.txt','a')
-        count=0
-        for i in range(np.size(dF_orb)):
-          count=count+1
-          output.write('%19.10E '%dF_orb[i])
-          if count%4==0: output.write('\n')
-        if count%4!=0: output.write('\n')
-        if istep==nsteps-1: output.write('%8d'%-1)
-        output.close()
-    comm.barrier()
+      dF_output,displ,count=[None]*3
+    comm.Gatherv(dF_orb,[dF_output,count,displ,MPI.DOUBLE],root=0)
+    if rank==0:
+      output=open(orbit_dir+'/orbit_loss_'+source+'.txt','a')
+      count=0
+      for i in range(norb):
+        count=count+1
+        output.write('%19.10E '%dF_output[i])
+        if count%4==0: output.write('\n')
+      if count%4!=0: output.write('\n')
+      if istep==nsteps-1: output.write('%8d'%-1)
+      output.close()
+    t_end=time()
+    print('rank',rank,'finished in',(t_end-t_beg)/60.,'minutes')
+  comm.barrier()
   #end for istep
-  if not(is_manager)and(mpi_io_test): goutput.Close()
+  if (mpi_io_test): goutput.Close()
 #end for idx
