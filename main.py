@@ -11,36 +11,11 @@ import grid
 comm = MPI.COMM_WORLD
 comm_size = comm.Get_size()
 comm_rank = comm.Get_rank()
-
-if (comm_size==1):
-  print('Stop: at least two processes are needed.')
-  exit()
-if (comm_size<=ngroup):
-  if (comm_rank==0): print('Stop: number of processes must be larger than number of groups.')
-  exit()
-if (comm_size%ngroup!=0):
-  if (comm_rank==0): print('Stop: number of processes must be divisible by ngroup!',flush=True)
-  exit()
-
-group_size=int(comm_size/ngroup)
-group_rank=int(comm_rank/group_size)
-group_comm=MPI.Comm.Split(comm,group_rank)
-if group_comm.Get_rank()==group_size-1:
-  is_manager=True
-else:
-  is_manager=False
-
-manager_ranks=(np.array(range(ngroup))+1)*group_size-1
-manager_group=MPI.Group.Incl(MPI.Comm.Get_group(comm),manager_ranks)
-manager_comm=MPI.Comm.Create_group(comm,manager_group)
-worker_group=MPI.Group.Excl(MPI.Comm.Get_group(comm),manager_ranks)
-worker_comm=MPI.Comm.Create_group(comm,worker_group)
-
 #read from orbit.txt or orbit.bp
 if bp_read:
-  orbit.readbp(orbit_dir,comm,worker_comm,is_manager)
+  orbit.readbp(orbit_dir,comm)
 else:
-  orbit.read(orbit_dir,comm,worker_comm,is_manager)
+  orbit.read(orbit_dir,comm)
 #determine the range of nodes needed
 if not(is_manager):
   #workers read mesh information

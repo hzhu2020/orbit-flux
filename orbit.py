@@ -1,11 +1,13 @@
 import numpy as np
 from parameters import ngroup
 
-def read(orbit_dir,comm,worker_comm,is_manager):
+def read(orbit_dir,comm):
+  size=comm.Get_size()
+  rank=comm.Get_rank()
   fname=orbit_dir+'/orbit.txt'
   global nmu,nH,nPphi,nt,iorb1,iorb2,\
         steps_orb,dt_orb,mu_orb,R_orb,Z_orb,vp_orb
-  if comm.Get_rank()==0:
+  if rank==0:
     fid=open(fname,'r')
     nmu=int(fid.readline(8))
     nPphi=int(fid.readline(8))
@@ -42,24 +44,18 @@ def read(orbit_dir,comm,worker_comm,is_manager):
     =comm.bcast((nmu,nPphi,nH,nt,mu_orb,dt_orb,steps_orb),root=0)
   
   norb=nmu*nPphi*nH
-  iorb1_list,iorb2_list=partition_orbit(norb,comm.Get_size())
+  iorb1_list,iorb2_list=partition_orbit(norb,size)
   norb_list=iorb2_list-iorb1_list+1
-
-  if is_manager:
-     iorb1=1
-     iorb2=norb
-  else:
-     iorb1=iorb1_list[worker_comm.Get_rank()]
-     iorb2=iorb2_list[worker_comm.Get_rank()]
+  iorb1=iorb1_list[rank]
+  iorb2=iorb2_list[rank]
   
   tmp=np.zeros((norb,nt),dtype=float,order='C')
-  if not(is_manager):
-    mynorb=iorb2-iorb1+1
-    R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
-    Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
-    vp_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+  mynorb=iorb2-iorb1+1
+  R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+  Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+  vp_orb=np.zeros((mynorb,nt),dtype=float,order='C')
 
-  if comm.Get_rank()==0:
+  if rank==0:
     count=0
     for iorb in range(norb):
       for it in range(nt):
@@ -68,9 +64,9 @@ def read(orbit_dir,comm,worker_comm,is_manager):
         tmp[iorb,it]=float(value)
         if count%4==0: fid.readline(1)
     if count%4!=0: fid.readline(1)
-  if not(is_manager): worker_comm.Scatterv([tmp,norb_list*nt],R_orb,root=0)
+  comm.Scatterv([tmp,norb_list*nt],R_orb,root=0)
    
-  if comm.Get_rank()==0:
+  if rank==0:
     count=0
     for iorb in range(norb):
       for it in range(nt):
@@ -79,9 +75,9 @@ def read(orbit_dir,comm,worker_comm,is_manager):
         tmp[iorb,it]=float(value)
         if count%4==0: fid.readline(1)
     if count%4!=0: fid.readline(1)
-  if not(is_manager): worker_comm.Scatterv([tmp,norb_list*nt],Z_orb,root=0)
+  comm.Scatterv([tmp,norb_list*nt],Z_orb,root=0)
 
-  if comm.Get_rank()==0:
+  if rank==0:
     count=0
     for iorb in range(norb):
       for it in range(nt):
@@ -90,19 +86,21 @@ def read(orbit_dir,comm,worker_comm,is_manager):
         tmp[iorb,it]=float(value)
         if count%4==0: fid.readline(1)
     if count%4!=0: fid.readline(1)
-  if not(is_manager): worker_comm.Scatterv([tmp,norb_list*nt],vp_orb,root=0)
+  comm.Scatterv([tmp,norb_list*nt],vp_orb,root=0)
 
-  if comm.Get_rank()==0:
+  if rank==0:
     value=fid.readline(8)
     if value!='      -1': print('Wrong end flag of orbit.txt')
     fid.close()
 
-def readbp(orbit_dir,comm,worker_comm,is_manager):
+def readbp(orbit_dir,comm):
   import adios2
+  rank=comm.Get_rank()
+  size=comm.Get_size()
   fname=orbit_dir+'/orbit.bp'
   global nmu,nH,nPphi,nt,iorb1,iorb2,\
         steps_orb,dt_orb,mu_orb,R_orb,Z_orb,vp_orb
-  if comm.Get_rank()==0:
+  if rank==0:
     fid=adios2.open(fname,'r')
     nmu=fid.read('nmu')
     nPphi=fid.read('nPphi')
@@ -123,38 +121,34 @@ def readbp(orbit_dir,comm,worker_comm,is_manager):
     =comm.bcast((nmu,nPphi,nH,nt,mu_orb,dt_orb,steps_orb),root=0)
   
   norb=nmu*nPphi*nH
-  iorb1_list,iorb2_list=partition_orbit(norb,comm.Get_size())
+  iorb1_list,iorb2_list=partition_orbit(norb,size)
   norb_list=iorb2_list-iorb1_list+1
-  if is_manager:
-     iorb1=1
-     iorb2=norb
-  else:
-     iorb1=iorb1_list[worker_comm.Get_rank()]
-     iorb2=iorb2_list[worker_comm.Get_rank()]
-     mynorb=iorb2-iorb1+1
-     R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
-     Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
-     vp_orb=np.zeros((mynorb,nt),dtype=float,order='C')
-     fid=adios2.open(fname,'r')
-     R_orb[:,:]=fid.read('R_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
-     Z_orb[:,:]=fid.read('Z_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
-     vp_orb[:,:]=fid.read('vp_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
-     fid.close()
+  iorb1=iorb1_list[rank]
+  iorb2=iorb2_list[rank]
+  print(rank,iorb1,iorb2)
+  mynorb=iorb2-iorb1+1
+  R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+  Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+  vp_orb=np.zeros((mynorb,nt),dtype=float,order='C')
+  fid=adios2.open(fname,'r')
+  R_orb[:,:]=fid.read('R_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
+  Z_orb[:,:]=fid.read('Z_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
+  vp_orb[:,:]=fid.read('vp_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
+  fid.close()
 
 def partition_orbit(norb,size):
-    num_workers=size-ngroup
     sum_steps=sum(steps_orb)
-    avg_steps=float(sum_steps)/float(num_workers)
+    avg_steps=float(sum_steps)/float(size)
     accuml_steps=0
-    iorb1_list=np.zeros((num_workers,),dtype=int)
-    iorb2_list=np.zeros((num_workers,),dtype=int)
+    iorb1_list=np.zeros((size,),dtype=int)
+    iorb2_list=np.zeros((size,),dtype=int)
     iorb1_list[:]=1
     iorb2_list[:]=norb
     iorb=0
-    for ipe in range(num_workers-1):
+    for ipe in range(size-1):
       iorb=iorb+1
       accuml_steps=accuml_steps+steps_orb[iorb-1]
-      while ((accuml_steps<avg_steps)and(norb-iorb>num_workers-ipe)):
+      while ((accuml_steps<avg_steps)and(norb-iorb>size-ipe)):
         iorb=iorb+1
         accuml_steps=accuml_steps+steps_orb[iorb-1]
  
