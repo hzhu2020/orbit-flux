@@ -1,5 +1,4 @@
 import numpy as np
-from parameters import ngroup
 
 def read(orbit_dir,comm):
   size=comm.Get_size()

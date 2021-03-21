@@ -2,7 +2,7 @@ import numpy as np
 from time import time
 from math import floor
 from mpi4py import MPI
-from parameters import bp_read,xgc_dir,orbit_dir,ngroup,start_gstep,period,nsteps,mpi_io_test,\
+from parameters import bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,mpi_io_test,\
                        sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,qi,mi,sml_dt,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source
 import orbit
