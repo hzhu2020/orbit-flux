@@ -89,7 +89,7 @@ def read(orbit_dir,comm):
 
   if rank==0:
     value=fid.readline(8)
-    if value!='      -1': print('Wrong end flag of orbit.txt')
+    if value!='      -1': print('Wrong end flag of orbit.txt',flush=True)
     fid.close()
 
 def readbp(orbit_dir,comm):

@@ -122,7 +122,7 @@ def read_dpot_orb(orbit_dir):
   fid=open(fname,'r')
   dum=int(fid.readline(8))
   if dum!=nnode:
-    print('Wrong nnode for pot0m.txt. Set dpot_orb=0.')
+    print('Wrong nnode for pot0m.txt. Set dpot_orb=0.',flush=True)
     return
   fid.readline(8)
   for i in range(nnode):
@@ -131,7 +131,7 @@ def read_dpot_orb(orbit_dir):
     fid.readline(1)
   dum=int(fid.readline(8))
   if dum!=-1:
-    print('Wrong file end for pot0m.txt. Set dpot_orb=0.')
+    print('Wrong file end for pot0m.txt. Set dpot_orb=0.',flush=True)
     dpot_orb[:]=0.0
     return
 
@@ -266,7 +266,7 @@ def gradF_orb(F,itr):
 
   xsj=r[0]*(z[1]-z[2])+r[1]*(z[2]-z[0])+r[2]*(z[0]-z[1])
   if (xsj==0.0):
-    print('Error: diag_orbit_loss at gradF_orb, xsj==0')
+    print('Error: diag_orbit_loss at gradF_orb, xsj==0',flush=True)
     exit()
     
   dFdx[0]=F[0]*(z[1]-z[2])+F[1]*(z[2]-z[0])+F[2]*(z[0]-z[1])
