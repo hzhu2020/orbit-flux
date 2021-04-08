@@ -5,7 +5,6 @@ diag_neutral=False
 xgc_dir='/path/to/xgc'
 orbit_dir='./input_dir'
 bp_read=False
-mpi_io_test=False
 start_gstep=1
 period=1
 nsteps=1

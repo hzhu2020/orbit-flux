@@ -2,7 +2,7 @@ import numpy as np
 from time import time
 from math import floor
 from mpi4py import MPI
-from parameters import bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,mpi_io_test,\
+from parameters import bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,\
                        sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,qi,mi,sml_dt,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source
 import orbit
@@ -64,16 +64,6 @@ for idx in range(1,5):
     output=open(orbit_dir+'/orbit_loss_'+source+'.txt','w')
     output.write('%8d%8d%8d%8d\n'%(orbit.nmu,orbit.nPphi,orbit.nH,nsteps))
     output.close()
-    if (mpi_io_test):
-      goutput=open(orbit_dir+'/mpi_io_'+source+'.txt','w')
-      goutput.write('%8d%8d%8d%8d\n'%(orbit.nmu,orbit.nPphi,orbit.nH,nsteps))
-      goutput.close()
-
-  if (mpi_io_test):
-    goutput=MPI.File.Open(comm,orbit_dir+'/mpi_io_'+source+'.txt',MPI.MODE_WRONLY)
-    offset_heading=33
-    num_lines=floor(orbit.nmu*orbit.nPphi*orbit.nH/4)+1
-    offset_step=orbit.nmu*orbit.nPphi*orbit.nH*20+num_lines
 
   #main diagnosis loop start here
   tmp=np.zeros((2,2),dtype=float)
@@ -96,7 +86,6 @@ for idx in range(1,5):
       Er_node,Ez_node=comm.bcast((Er_node,Ez_node),root=0)
 
     dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1),dtype=float)
-    if mpi_io_test: text=''
     for iorb in range(orbit.iorb1,orbit.iorb2+1):
       imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
       mu=orbit.mu_orb[imu_orb-1]
@@ -173,15 +162,7 @@ for idx in range(1,5):
         df0g_orb=df0g_orb*orbit.dt_orb[iorb-1]/sml_dt
         dF_orb[iorb-orbit.iorb1]=dF_orb[iorb-orbit.iorb1]+df0g_orb*(mi/np.pi/2)**1.5/1.6022E-19
       #end for it_orb
-      if (mpi_io_test):
-        text=text+"{:19.10E}".format(dF_orb[iorb-orbit.iorb1])+' '
-        if (iorb%4==0)or(iorb==orbit.nmu*orbit.nPphi*orbit.nH): text=text+'\n'
     #end for iorb
-    if (mpi_io_test):
-      data=np.empty(len(text),dtype=np.int8)
-      data[:]=bytearray(text,encoding='utf-8')
-      offset_local=(orbit.iorb1-1)*20+floor((orbit.iorb1-1)/4)
-      goutput.Write_at_all(offset_heading+offset_step*istep+offset_local,data)
     #write outputs
     iorb1_list=comm.gather(orbit.iorb1,root=0)
     iorb2_list=comm.gather(orbit.iorb2,root=0)
@@ -207,5 +188,4 @@ for idx in range(1,5):
     print('rank',rank,'finished in',(t_end-t_beg)/60.,'minutes',flush=True)
   comm.barrier()
   #end for istep
-  if (mpi_io_test): goutput.Close()
 #end for idx
