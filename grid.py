@@ -56,18 +56,25 @@ def read(xgc_dir,Nr,Nz):
   R,Z=np.meshgrid(rlin,zlin)
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
 
-def readf0(idx,fname,min_node,max_node):
+def readf0(xgc_dir,source,idx,start_gstep,nsteps,period,min_node,max_node):
   global df0g
-  fid=ad.open(fname,'r')
-  nnode=fid.read('nnode')
-  nmu=fid.read('mudata')
-  nvp=fid.read('vpdata')
-  nnode=max_node-min_node+1
-  if idx==1:
-    df0g=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,nnode,nvp])
-  else:
-    df0g=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,nnode,nvp])
-  df0g=np.transpose(df0g)#[vp,node,mu] order as in Fortran XGC
+  for istep in range(nsteps):
+    gstep=start_gstep+istep*period
+    if idx==1:
+      fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
+    else:
+      fname=xgc_dir+'/xgc.orbit.'+source+'.'+'{:0>5d}'.format(gstep)+'.bp'
+    fid=ad.open(fname,'r')
+    nmu=fid.read('mudata')
+    nvp=fid.read('vpdata')
+    n_node=max_node-min_node+1
+    if istep==0: df0g=np.zeros((nvp,n_node,nmu,nsteps),dtype=float)
+    if idx==1:
+      tmp=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+    else:
+      tmp=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+    tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
+    df0g[:,:,:,istep]=tmp
 
 def grid_deriv_init(xgc_dir):
   global nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
@@ -138,23 +145,25 @@ def read_dpot_orb(orbit_dir):
   fid.close()
   return
 
-def Eturb(xgc_dir,gstep,grad_psitheta,psi_only): 
-  fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
-  fid=ad.open(fname,'r')
-  dpot=fid.read('dpot')
-  dpot=dpot-dpot_orb
-  Er=np.zeros((nnode,),dtype=float)
-  Ez=np.zeros((nnode,),dtype=float)
-  for i in range(nnode):
-    for j in range(nelement_r[i]):
-      ind=eindex_r[j,i]
-      Er[i]=Er[i]+dpot[ind-1]*value_r[j,i]
-    for j in range(nelement_z[i]):
-      ind=eindex_z[j,i]
-      Ez[i]=Ez[i]+dpot[ind-1]*value_z[j,i]
-  if grad_psitheta:
+def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only): 
+  Er=np.zeros((nnode,nsteps),dtype=float)
+  Ez=np.zeros((nnode,nsteps),dtype=float)
+  for istep in range(nsteps):
+    gstep=start_gstep+istep*period
+    fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+    fid=ad.open(fname,'r')
+    dpot=fid.read('dpot')
+    dpot=dpot-dpot_orb
     for i in range(nnode):
-      if (basis[i]==0)and(psi_only): Ez[i]==0
+      for j in range(nelement_r[i]):
+        ind=eindex_r[j,i]
+        Er[i,istep]=Er[i,istep]+dpot[ind-1]*value_r[j,i]
+      for j in range(nelement_z[i]):
+        ind=eindex_z[j,i]
+        Ez[i,istep]=Ez[i,istep]+dpot[ind-1]*value_z[j,i]
+    if grad_psitheta:
+      for i in range(nnode):
+        if (basis[i]==0)and(psi_only): Ez[i,istep]==0
   Er=-Er
   Ez=-Ez
   return Er,Ez
@@ -255,8 +264,8 @@ def TwoD(x2d,y2d,f2d,xin,yin):
 
   return fout
 
-def gradF_orb(F,itr):
-  dFdx=np.zeros((2,),dtype=float)
+def gradF_orb(F,itr,nsteps):
+  dFdx=np.zeros((2,nsteps),dtype=float)
   r=np.zeros((3,),dtype=float)
   z=np.zeros((3,),dtype=float)
   for i in range(3):
@@ -269,8 +278,8 @@ def gradF_orb(F,itr):
     print('Error: diag_orbit_loss at gradF_orb, xsj==0',flush=True)
     exit()
     
-  dFdx[0]=F[0]*(z[1]-z[2])+F[1]*(z[2]-z[0])+F[2]*(z[0]-z[1])
-  dFdx[0]=dFdx[0]/xsj
-  dFdx[1]=F[0]*(r[2]-r[1])+F[1]*(r[0]-r[2])+F[2]*(r[1]-r[0])
-  dFdx[1]=dFdx[1]/xsj
+  dFdx[0,:]=F[0,:]*(z[1]-z[2])+F[1,:]*(z[2]-z[0])+F[2,:]*(z[0]-z[1])
+  dFdx[0,:]=dFdx[0,:]/xsj
+  dFdx[1,:]=F[0,:]*(r[2]-r[1])+F[1,:]*(r[0]-r[2])+F[2,:]*(r[1]-r[0])
+  dFdx[1,:]=dFdx[1,:]/xsj
   return dFdx

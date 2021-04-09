@@ -65,115 +65,112 @@ for idx in range(1,5):
     output.write('%8d%8d%8d%8d\n'%(orbit.nmu,orbit.nPphi,orbit.nH,nsteps))
     output.close()
 
-  #main diagnosis loop start here
-  tmp=np.zeros((2,2),dtype=float)
+  #main diagnosis starts here
+  tmp=np.zeros((2,2,nsteps),dtype=float)
   p=np.zeros((3,),dtype=float)
-  for istep in range(nsteps):
-    t_beg=time()
-    gstep=start_gstep+istep*period
-    if(rank==0): print(source+' flux, gstep=',gstep,flush=True)
-    if idx==1:
-      fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
-    else:
-      fname=xgc_dir+'/xgc.orbit.'+source+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    grid.readf0(idx,fname,min_node,max_node)
-    #prepare turbulence electric field
-    if idx==1:
-      if rank==0:
-        Er_node,Ez_node=grid.Eturb(xgc_dir,gstep,sml_grad_psitheta,False)
-      else:
-        Er_node,Ez_node=[None]*2
-      Er_node,Ez_node=comm.bcast((Er_node,Ez_node),root=0)
-
-    dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1),dtype=float)
-    for iorb in range(orbit.iorb1,orbit.iorb2+1):
-      imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
-      mu=orbit.mu_orb[imu_orb-1]
-      for it_orb in range(orbit.steps_orb[iorb-1]):
-        df0g_orb=0.0
-        if idx==1:
-          E=np.zeros((2,),dtype=float)
-          dxdt=np.zeros((2,),dtype=float)
-          dvpdt=0.0
-          F_node=np.zeros((3,),dtype=float)
-          dFdvp=0.0
-
-        r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
-        z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
-        vp=orbit.vp_orb[iorb-orbit.iorb1,it_orb]
-        itr=itr_save[iorb-orbit.iorb1,it_orb]
-        p[:]=p_save[iorb-orbit.iorb1,it_orb,:]
-        if (itr>0):
-          for i in range(3):
-            node=grid.nd[i,itr-1]
-            Br=grid.B[node-1,0]
-            Bz=grid.B[node-1,1]
-            Bphi=grid.B[node-1,2]
-            B=np.sqrt(Br**2+Bz**2+Bphi**2)
-            tempi=grid.tempi[node-1]*1.6022E-19
-            mu_n=2*mu*B/tempi
-            vp_n=vp/np.sqrt(tempi/mi)
-            if idx==1:
-              rho=mi*vp/qi/B
-              D=1.0/(1.0+rho*grid.nb_curl_nb[node-1])
-              curlbr=grid.curlbr[node-1]
-              curlbz=grid.curlbz[node-1]
-              if grid.basis[node-1]==1:
-                E[0]=Er_node[node-1]
-                E[1]=Ez_node[node-1]
-              else:
-                E[0]=(Er_node[node-1]*Bz+Ez_node[node-1]*Br)/np.sqrt(Br**2+Bz**2)
-                E[1]=(-Er_node[node-1]*Br+Ez_node[node-1]*Bz)/np.sqrt(Br**2+Bz**2)
-
-              dxdt[0]=dxdt[0]+p[i]*D*(-Bphi)*E[1]/B**2
-              dxdt[1]=dxdt[1]+p[i]*D*(+Bphi)*E[0]/B**2
-              dvpdt=dvpdt+p[i]*D*qi/mi*\
-                   (E[0]*(Br/B+rho*grid.curlbr[node-1])+E[1]*(Bz/B+rho*grid.curlbz[node-1]))
-            #end if idx
-            if (mu_n<grid.f0_smu_max**2)and(vp_n<grid.f0_vp_max)and(vp_n>=-grid.f0_vp_max):
-              wmu=np.zeros((2,),dtype=float)
-              wvp=np.zeros((2,),dtype=float)
-              smu=np.sqrt(mu_n)
-              wmu[0]=smu/grid.f0_dsmu
-              imu_f0=floor(wmu[0])
-              wmu[1]=wmu[0]-float(imu_f0)
-              wmu[0]=1.0-wmu[1]
-              wvp[0]=vp_n/grid.f0_dvp
-              ivp_f0=floor(wvp[0])
-              wvp[1]=wvp[0]-float(ivp_f0)
-              wvp[0]=1.0-wvp[1]
-              imu=imu_f0
-              ivp=ivp_f0+grid.f0_nvp
-              inode=node-min_node
-              tmp[0:2,0:2]=grid.df0g[ivp:ivp+2,inode,imu:imu+2]
-              value=tmp[0,0]*wvp[0]*wmu[0]+tmp[0,1]*wvp[0]*wmu[1]+tmp[1,0]*wvp[1]*wmu[0]+tmp[1,1]*wvp[1]*wmu[1]
-              if idx==1:
-                F_node[i]=value/np.sqrt(2*mu*B)
-                dFdvp=dFdvp+(wmu[0]*(tmp[1,0]-tmp[0,0])+wmu[1]*(tmp[1,1]-tmp[0,1]))\
-                      *p[i]/np.sqrt(2*mu*B)/(grid.f0_dvp*np.sqrt(tempi/mi))
-              else:
-                df0g_orb=df0g_orb+value*p[i]/np.sqrt(2*mu*B)
-          #end for i
-          if idx==1:
-            grad_F=grid.gradF_orb(F_node,itr)
-            df0g_orb=-dxdt[0]*grad_F[0]-dxdt[1]*grad_F[1]-dvpdt*dFdvp
-            df0g_orb=df0g_orb*sml_dt
-        #end if itr
-        df0g_orb=df0g_orb*orbit.dt_orb[iorb-1]/sml_dt
-        dF_orb[iorb-orbit.iorb1]=dF_orb[iorb-orbit.iorb1]+df0g_orb*(mi/np.pi/2)**1.5/1.6022E-19
-      #end for it_orb
-    #end for iorb
-    #write outputs
-    iorb1_list=comm.gather(orbit.iorb1,root=0)
-    iorb2_list=comm.gather(orbit.iorb2,root=0)
+  t_beg=time()
+  if(rank==0): print('Calculating',source+' flux',flush=True)
+  grid.readf0(xgc_dir,source,idx,start_gstep,nsteps,period,min_node,max_node)
+  #prepare turbulence electric field
+  if idx==1:
     if rank==0:
-      norb=orbit.nmu*orbit.nPphi*orbit.nH
-      dF_output=np.zeros((norb,),dtype=float)
-      count=np.array(iorb2_list)-np.array(iorb1_list)+1
-      displ=np.array(iorb1_list)-1
+      Er_node,Ez_node=grid.Eturb(xgc_dir,start_gstep,nsteps,period,sml_grad_psitheta,False)
     else:
-      dF_output,displ,count=[None]*3
-    comm.Gatherv(dF_orb,[dF_output,count,displ,MPI.DOUBLE],root=0)
+      Er_node,Ez_node=[None]*2
+    Er_node,Ez_node=comm.bcast((Er_node,Ez_node),root=0)
+
+  dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps),dtype=float)
+  for iorb in range(orbit.iorb1,orbit.iorb2+1):
+    imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
+    mu=orbit.mu_orb[imu_orb-1]
+    for it_orb in range(orbit.steps_orb[iorb-1]):
+      df0g_orb=np.zeros((nsteps,),dtype=float)
+      if idx==1:
+        E=np.zeros((2,nsteps),dtype=float)
+        dxdt=np.zeros((2,nsteps),dtype=float)
+        dvpdt=np.zeros((nsteps,),dtype=float)
+        F_node=np.zeros((3,nsteps),dtype=float)
+        dFdvp=np.zeros((nsteps,),dtype=float)
+
+      r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
+      z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
+      vp=orbit.vp_orb[iorb-orbit.iorb1,it_orb]
+      itr=itr_save[iorb-orbit.iorb1,it_orb]
+      p[:]=p_save[iorb-orbit.iorb1,it_orb,:]
+      if (itr>0):
+        for i in range(3):
+          node=grid.nd[i,itr-1]
+          Br=grid.B[node-1,0]
+          Bz=grid.B[node-1,1]
+          Bphi=grid.B[node-1,2]
+          B=np.sqrt(Br**2+Bz**2+Bphi**2)
+          tempi=grid.tempi[node-1]*1.6022E-19
+          mu_n=2*mu*B/tempi
+          vp_n=vp/np.sqrt(tempi/mi)
+          if idx==1:
+            rho=mi*vp/qi/B
+            D=1.0/(1.0+rho*grid.nb_curl_nb[node-1])
+            curlbr=grid.curlbr[node-1]
+            curlbz=grid.curlbz[node-1]
+            if grid.basis[node-1]==1:
+              E[0,:]=Er_node[node-1,:]
+              E[1,:]=Ez_node[node-1,:]
+            else:
+              E[0,:]=(Er_node[node-1,:]*Bz+Ez_node[node-1,:]*Br)/np.sqrt(Br**2+Bz**2)
+              E[1,:]=(-Er_node[node-1,:]*Br+Ez_node[node-1,:]*Bz)/np.sqrt(Br**2+Bz**2)
+
+            dxdt[0,:]=dxdt[0,:]+p[i]*D*(-Bphi)*E[1,:]/B**2
+            dxdt[1,:]=dxdt[1,:]+p[i]*D*(+Bphi)*E[0,:]/B**2
+            dvpdt[:]=dvpdt[:]+p[i]*D*qi/mi*\
+                 (E[0,:]*(Br/B+rho*grid.curlbr[node-1])+E[1,:]*(Bz/B+rho*grid.curlbz[node-1]))
+          #end if idx
+          if (mu_n<grid.f0_smu_max**2)and(vp_n<grid.f0_vp_max)and(vp_n>=-grid.f0_vp_max):
+            wmu=np.zeros((2,),dtype=float)
+            wvp=np.zeros((2,),dtype=float)
+            smu=np.sqrt(mu_n)
+            wmu[0]=smu/grid.f0_dsmu
+            imu_f0=floor(wmu[0])
+            wmu[1]=wmu[0]-float(imu_f0)
+            wmu[0]=1.0-wmu[1]
+            wvp[0]=vp_n/grid.f0_dvp
+            ivp_f0=floor(wvp[0])
+            wvp[1]=wvp[0]-float(ivp_f0)
+            wvp[0]=1.0-wvp[1]
+            imu=imu_f0
+            ivp=ivp_f0+grid.f0_nvp
+            inode=node-min_node
+            tmp[0:2,0:2,:]=grid.df0g[ivp:ivp+2,inode,imu:imu+2,:]
+            value=tmp[0,0,:]*wvp[0]*wmu[0]+tmp[0,1,:]*wvp[0]*wmu[1]\
+                 +tmp[1,0,:]*wvp[1]*wmu[0]+tmp[1,1,:]*wvp[1]*wmu[1]
+            if idx==1:
+              F_node[i,:]=value[:]/np.sqrt(2*mu*B)
+              dFdvp[:]=dFdvp[:]+(wmu[0]*(tmp[1,0,:]-tmp[0,0,:])+wmu[1]*(tmp[1,1,:]-tmp[0,1,:]))\
+                    *p[i]/np.sqrt(2*mu*B)/(grid.f0_dvp*np.sqrt(tempi/mi))
+            else:
+              df0g_orb[:]=df0g_orb[:]+value[:]*p[i]/np.sqrt(2*mu*B)
+        #end for i
+        if idx==1:
+          grad_F=grid.gradF_orb(F_node,itr,nsteps)
+          df0g_orb[:]=-dxdt[0,:]*grad_F[0,:]-dxdt[1,:]*grad_F[1,:]-dvpdt[:]*dFdvp[:]
+          df0g_orb[:]=df0g_orb[:]*sml_dt
+      #end if itr
+      df0g_orb[:]=df0g_orb[:]*orbit.dt_orb[iorb-1]/sml_dt
+      dF_orb[iorb-orbit.iorb1,:]=dF_orb[iorb-orbit.iorb1,:]+df0g_orb[:]*(mi/np.pi/2)**1.5/1.6022E-19
+    #end for it_orb
+  #end for iorb
+  #write outputs
+  iorb1_list=comm.gather(orbit.iorb1,root=0)
+  iorb2_list=comm.gather(orbit.iorb2,root=0)
+  if rank==0:
+    norb=orbit.nmu*orbit.nPphi*orbit.nH
+    dF_output=np.zeros((norb,),dtype=float)
+    count=np.array(iorb2_list)-np.array(iorb1_list)+1
+    displ=np.array(iorb1_list)-1
+  else:
+    dF_output,displ,count=[None]*3
+  for istep in range(nsteps):
+    value=np.array(dF_orb[:,istep],order='C')
+    comm.Gatherv(value,[dF_output,count,displ,MPI.DOUBLE],root=0)
     if rank==0:
       output=open(orbit_dir+'/orbit_loss_'+source+'.txt','a')
       count=0
@@ -184,8 +181,7 @@ for idx in range(1,5):
       if count%4!=0: output.write('\n')
       if istep==nsteps-1: output.write('%8d'%-1)
       output.close()
-    t_end=time()
-    print('rank',rank,'finished in',(t_end-t_beg)/60.,'minutes',flush=True)
-  comm.barrier()
-  #end for istep
+  t_end=time()
+  print(source,'diagnosis finished in',(t_end-t_beg)/60.,'minutes',flush=True)
+comm.barrier()
 #end for idx
