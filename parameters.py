@@ -8,6 +8,7 @@ bp_read=False
 start_gstep=1
 period=1
 nsteps=1
+nloops=2#to avoid large memory usage
 sml_tri_psi_weighting=True
 sml_grad_psitheta=True
 Nr=1000
