@@ -11,19 +11,26 @@ import grid
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
+if nloops>nsteps:
+  if rank==0: print('Warning: nloops>nsteps. Setting nloops=nsteps...')
+  nloops=nsteps
 #read from orbit.txt or orbit.bp
+if rank==0: print('Reading orbit information...',flush=True)
 if bp_read:
   orbit.readbp(orbit_dir,comm)
 else:
   orbit.read(orbit_dir,comm)
 #determine the range of nodes needed
+if rank==0: print('Reading grid information...',flush=True)
 grid.read(xgc_dir,Nr,Nz)
 if diag_turbulence:
+  if rank==0: print('Reading additional information for turbulence diagnosis...',flush=True)
   grid.additional_Bfield(xgc_dir,Nr,Nz)
   if rank==0:
     grid.grid_deriv_init(xgc_dir)
     grid.read_dpot_orb(orbit_dir)
 
+if rank==0: print('Preparing orbit locations...',flush=True)
 t_beg=time()
 min_node=grid.nnode
 max_node=0
