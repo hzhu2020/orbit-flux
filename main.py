@@ -32,24 +32,7 @@ if diag_turbulence:
 
 if rank==0: print('Preparing orbit locations...',flush=True)
 t_beg=time()
-min_node=grid.nnode
-max_node=0
-mynorb=orbit.iorb2-orbit.iorb1+1
-itr_save=np.zeros((mynorb,orbit.nt),dtype=int)
-p_save=np.zeros((mynorb,orbit.nt,3),dtype=float)
-for iorb in range(orbit.iorb1,orbit.iorb2+1):
-  for it_orb in range(orbit.steps_orb[iorb-1]):
-    r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
-    z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
-    itr,p=grid.search_tr2([r,z])
-    if (sml_tri_psi_weighting)and(itr>0)and(max(p)<1.0): p=grid.t_coeff_mod([r,z],itr,p)
-    itr_save[iorb-orbit.iorb1,it_orb]=itr
-    p_save[iorb-orbit.iorb1,it_orb,:]=p[:]
-    if itr>0:
-      for i in range(3):
-        node=grid.nd[i,itr-1]
-        if (node>max_node): max_node=node
-        if (node<min_node): min_node=node
+min_node,max_node,itr_save,p_save=grid.node_range(sml_tri_psi_weighting)
 t_end=time()
 if rank==0: print('Preparing orbit locations took',(t_end-t_beg)/60.,'minutes',flush=True)
 #set number of steps for each loop to avoid too large 

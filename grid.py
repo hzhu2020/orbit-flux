@@ -283,3 +283,25 @@ def gradF_orb(F,itr,nsteps):
   dFdx[1,:]=F[0,:]*(r[2]-r[1])+F[1,:]*(r[0]-r[2])+F[2,:]*(r[1]-r[0])
   dFdx[1,:]=dFdx[1,:]/xsj
   return dFdx
+
+def node_range(tri_psi):
+  from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
+  min_node=nnode
+  max_node=0
+  mynorb=iorb2-iorb1+1
+  itr_save=np.zeros((mynorb,nt),dtype=int)
+  p_save=np.zeros((mynorb,nt,3),dtype=float)
+  for iorb in range(iorb1,iorb2+1):
+    for it_orb in range(steps_orb[iorb-1]):
+      r=R_orb[iorb-iorb1,it_orb]
+      z=Z_orb[iorb-iorb1,it_orb]
+      itr,p=search_tr2([r,z])
+      if (tri_psi)and(itr>0)and(max(p)<1.0): p=t_coeff_mod([r,z],itr,p)
+      itr_save[iorb-iorb1,it_orb]=itr
+      p_save[iorb-iorb1,it_orb,:]=p[:]
+      if itr>0:
+        for i in range(3):
+          node=nd[i,itr-1]
+          if (node>max_node): max_node=node
+          if (node<min_node): min_node=node
+  return min_node,max_node,itr_save,p_save
