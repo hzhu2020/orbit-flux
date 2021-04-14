@@ -204,7 +204,7 @@ def t_coeff_mod(xy,itr,p):
     psi_diff=3
   elif abs(psi[0]-psi[2])<=eps1:
     psi_diff=2
-  elif abs(psi[1]-psi[2])<-eps1:
+  elif abs(psi[1]-psi[2])<=eps1:
     psi_diff=1
 
   if (psi_diff>0):
@@ -304,4 +304,155 @@ def node_range(tri_psi):
           node=nd[i,itr-1]
           if (node>max_node): max_node=node
           if (node<min_node): min_node=node
+  return min_node,max_node,itr_save,p_save
+
+def node_range_gpu(tri_psi):
+  import cupy as cp
+  node_range=cp.ElementwiseKernel(
+  'raw int64 steps_orb,raw float64 R_orb,raw float64 Z_orb,int64 iorb1,int64 iorb2,int64 nt,\
+  int64 ihi,int64 jhi,int64 num_tri,raw int64 guess_list,raw int64 guess_count,raw float64 guess_min,\
+  raw float64 inv_guess_d,raw int64 guess_xtable,raw float64 mapping,raw int64 nd,\
+  bool tri_psi,float64 psix,raw float64 psi2d,raw float64 psi_rz,raw float64 rlin, raw float64 zlin',
+  'raw int64 itr_save,raw float64 p_save,int64 min_node,int64 max_node',
+  '''
+  int itr,ilo,jlo,ij[2],ix,iy,ir,iz,istart,iend,itrig,node,Nr,Nz,psi_diff,a,b;
+  float r,z,p[3],eps=1E-10,dx,dy,dr,dz,r0,z0,tmp,wr,wz,eps1,psi[4],p_temp,t_temp;
+  r0=rlin[0];
+  z0=zlin[0];
+  dr=rlin[1]-rlin[0];
+  dz=zlin[1]-zlin[0];
+  Nr=rlin.size();
+  Nz=zlin.size();
+  eps1=1E-4*psix;
+  for (int iorb=iorb1;iorb<=iorb2;iorb++){
+    for (int it_orb=0;it_orb<steps_orb[iorb-1];it_orb++){
+      r=R_orb[(iorb-iorb1)*nt+it_orb];
+      z=Z_orb[(iorb-iorb1)*nt+it_orb];
+      //search_tr2
+      itr=-1;
+      p[0]=0.;
+      p[1]=0.;
+      p[2]=0.;
+      ilo=1;
+      jlo=1;
+      ij[0]=floor((r-guess_min[0])*inv_guess_d[0])+1;
+      ij[1]=floor((z-guess_min[1])*inv_guess_d[1])+1;
+      ix=min(int(ihi),ij[0]);
+      ix=max(ilo,ix);
+      iy=min(int(jhi),ij[1]);
+      iy=max(jlo,iy);
+      istart=guess_xtable[(ix-1)*ihi+iy-1];
+      iend=istart+guess_count[(ix-1)*ihi+iy-1]-1;
+      for (int k=istart;k<=iend;k++){
+        itrig=guess_list[k-1];
+        dx=r-mapping[0*3*num_tri+2*num_tri+itrig-1];
+        dy=z-mapping[1*3*num_tri+2*num_tri+itrig-1];   
+        p[0]=mapping[0*3*num_tri+0*num_tri+itrig-1]*dx\
+            +mapping[0*3*num_tri+1*num_tri+itrig-1]*dy;
+        p[1]=mapping[1*3*num_tri+0*num_tri+itrig-1]*dx\
+            +mapping[1*3*num_tri+1*num_tri+itrig-1]*dy;
+        p[2]=1.-p[0]-p[1];
+        tmp=min(p[0],p[1]);
+        tmp=min(tmp,p[2]);
+        if (tmp>=-eps){
+          itr=itrig;
+          break;
+        }
+      }
+      tmp=max(p[0],p[1]);
+      tmp=max(tmp,p[2]);
+      if ((tri_psi)&&(itr>0)&&(tmp<1.0)){
+        ir=floor((r-r0)/dr);
+        iz=floor((z-z0)/dz);
+        wr=(r-r0)/dr-ir;
+        wz=(z-z0)/dz-iz;
+        psi[0]=psi_rz[nd[0*num_tri+itr-1]-1];
+        psi[1]=psi_rz[nd[1*num_tri+itr-1]-1];
+        psi[2]=psi_rz[nd[2*num_tri+itr-1]-1];
+        psi[3]=psi2d[iz*Nz+ir]*(1-wz)*(1-wr)+psi2d[(iz+1)*Nz+ir]*wz*(1-wr)\
+              +psi2d[iz*Nz+ir+1]*(1-wz)*wr+psi2d[(iz+1)*Nz+ir+1]*wz*wr;
+        psi_diff=0;
+        if (abs(psi[0]-psi[1])<=eps1){
+          psi_diff=3;
+        }
+        else if (abs(psi[0]-psi[2])<=eps1){
+          psi_diff=2;
+        }
+        else if (abs(psi[1]-psi[2])<=eps1){
+          psi_diff=1;
+        }
+        if (psi_diff>0){
+          a=psi_diff%3+1;
+          b=(psi_diff+1)%3+1;
+          tmp=psi[psi_diff-1];
+          psi[0]=abs(psi[0]-tmp);
+          psi[1]=abs(psi[1]-tmp);
+          psi[2]=abs(psi[2]-tmp);
+          psi[3]=abs(psi[3]-tmp);
+          p_temp=psi[3]/psi[a-1];
+          p_temp=min(p_temp,1.0);
+          p[psi_diff-1]=1.0-p_temp;
+          t_temp=p[a-1]+p[b-1];
+          p[a-1]=p_temp*p[a-1]/t_temp;
+          p[b-1]=p_temp*p[b-1]/t_temp;
+        }
+      }
+      itr_save[(iorb-iorb1)*nt+it_orb]=itr;
+      p_save[(iorb-iorb1)*3*nt+it_orb*3+0]=p[0];
+      p_save[(iorb-iorb1)*3*nt+it_orb*3+1]=p[1];
+      p_save[(iorb-iorb1)*3*nt+it_orb*3+2]=p[2];
+      if (itr>0){
+        for (int k=0;k<3;k++){
+          node=nd[k*num_tri+itr-1];
+          if (node>max_node) max_node=node;
+          if (node<min_node) min_node=node;
+        }
+      }
+    }//end for it_orb
+  }//end for iorb
+  ''',
+  'node_range'
+  )
+  from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
+  mynorb=iorb2-iorb1+1
+  steps_orb_gpu=cp.asarray(steps_orb,dtype=cp.int64)
+  R_orb_gpu=cp.asarray(R_orb,dtype=cp.float64).ravel(order='C')
+  Z_orb_gpu=cp.asarray(Z_orb,dtype=cp.float64).ravel(order='C')
+  itr_save_gpu=cp.zeros((mynorb*nt,),dtype=cp.int64)
+  p_save_gpu=cp.zeros((mynorb*nt*3,),dtype=cp.float64)
+  min_node_gpu=cp.array([nnode],dtype=cp.int64)
+  max_node_gpu=cp.array([0],dtype=cp.int64)
+  iorb1_gpu=cp.array([iorb1],dtype=cp.int64)
+  iorb2_gpu=cp.array([iorb2],dtype=cp.int64)
+  nt_gpu=cp.array([nt],dtype=cp.int64)
+  ihi,jhi=np.shape(guess_table)
+  ihi_gpu=cp.array([ihi],dtype=cp.int64)
+  jhi_gpu=cp.array([jhi],dtype=cp.int64)
+  guess_min_gpu=cp.array(guess_min,dtype=cp.float64)
+  inv_guess_d_gpu=cp.array(inv_guess_d,dtype=cp.float64)
+  guess_xtable_gpu=cp.array(guess_xtable,dtype=cp.int64).ravel(order='C')
+  guess_list_gpu=cp.array(guess_list,dtype=cp.int64)
+  guess_count_gpu=cp.array(guess_count,dtype=cp.int64).ravel(order='C')
+  mapping_gpu=cp.array(mapping,dtype=cp.float64).ravel(order='C')
+  nd_gpu=cp.array(nd,dtype=cp.int64).ravel(order='C')
+  num_tri=np.shape(mapping)[2]
+  num_tri_gpu=cp.array([num_tri],dtype=cp.int64)
+  tri_psi_gpu=cp.array([tri_psi],dtype=cp.bool)
+  psix_gpu=cp.array([psix],dtype=cp.float64)
+  psi2d_gpu=cp.array(psi2d,dtype=cp.float64).ravel(order='C')
+  psi_rz_gpu=cp.array(psi_rz,dtype=cp.float64)
+  rlin_gpu=cp.array(rlin,dtype=cp.float64)
+  zlin_gpu=cp.array(zlin,dtype=cp.float64)
+  node_range(steps_orb_gpu,R_orb_gpu,Z_orb_gpu,iorb1_gpu,iorb2_gpu,nt_gpu,ihi_gpu,jhi_gpu,num_tri,guess_list_gpu,\
+             guess_count_gpu,guess_min_gpu,inv_guess_d_gpu,guess_xtable_gpu,mapping_gpu,nd_gpu,\
+             tri_psi_gpu,psix_gpu,psi2d_gpu,psi_rz_gpu,rlin_gpu,zlin_gpu,\
+             itr_save_gpu,p_save_gpu,min_node_gpu,max_node_gpu)
+  min_node=cp.asnumpy(min_node_gpu)
+  min_node=min_node[0]
+  max_node=cp.asnumpy(max_node_gpu)
+  max_node=max_node[0]
+  itr_save=cp.asnumpy(itr_save_gpu)
+  itr_save=itr_save.reshape(mynorb,nt,order='C')
+  p_save=cp.asnumpy(p_save_gpu)
+  p_save=p_save.reshape(mynorb,nt,3,order='C')
   return min_node,max_node,itr_save,p_save

@@ -11,6 +11,13 @@ import grid
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
+try:
+  import cupy
+  use_gpu=True
+  if rank==0: print('Using CuPy for GPU acceleration...')
+except:
+  use_gpu=False
+
 if nloops>nsteps:
   if rank==0: print('Warning: nloops>nsteps. Setting nloops=nsteps...')
   nloops=nsteps
@@ -32,7 +39,10 @@ if diag_turbulence:
 
 if rank==0: print('Preparing orbit locations...',flush=True)
 t_beg=time()
-min_node,max_node,itr_save,p_save=grid.node_range(sml_tri_psi_weighting)
+if use_gpu:
+  min_node,max_node,itr_save,p_save=grid.node_range_gpu(sml_tri_psi_weighting)
+else:
+  min_node,max_node,itr_save,p_save=grid.node_range(sml_tri_psi_weighting)
 t_end=time()
 if rank==0: print('Preparing orbit locations took',(t_end-t_beg)/60.,'minutes',flush=True)
 #set number of steps for each loop to avoid too large 
