@@ -60,7 +60,7 @@ def readf0(xgc_dir,source,idx,start_gstep,nsteps,period,min_node,max_node):
   global df0g
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
-    if idx==1:
+    if (idx==1)or(idx==5):
       fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
     else:
       fname=xgc_dir+'/xgc.orbit.'+source+'.'+'{:0>5d}'.format(gstep)+'.bp'
@@ -69,7 +69,7 @@ def readf0(xgc_dir,source,idx,start_gstep,nsteps,period,min_node,max_node):
     nvp=fid.read('vpdata')
     n_node=max_node-min_node+1
     if istep==0: df0g=np.zeros((nvp,n_node,nmu,nsteps),dtype=float)
-    if idx==1:
+    if (idx==1)or(idx==5):
       tmp=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
     else:
       tmp=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
@@ -145,7 +145,8 @@ def read_dpot_orb(orbit_dir):
   fid.close()
   return
 
-def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only): 
+def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
+  from parameters import Eturb_pot0,Eturb_dpot 
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
   for istep in range(nsteps):
@@ -153,14 +154,15 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
     fid=ad.open(fname,'r')
     dpot=fid.read('dpot')
-    dpot=dpot-dpot_orb
+    pot0=fid.read('pot0')
+    dpot_turb=float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-dpot_orb
     for i in range(nnode):
       for j in range(nelement_r[i]):
         ind=eindex_r[j,i]
-        Er[i,istep]=Er[i,istep]+dpot[ind-1]*value_r[j,i]
+        Er[i,istep]=Er[i,istep]+dpot_turb[ind-1]*value_r[j,i]
       for j in range(nelement_z[i]):
         ind=eindex_z[j,i]
-        Ez[i,istep]=Ez[i,istep]+dpot[ind-1]*value_z[j,i]
+        Ez[i,istep]=Ez[i,istep]+dpot_turb[ind-1]*value_z[j,i]
     if grad_psitheta:
       for i in range(nnode):
         if (basis[i]==0)and(psi_only): Ez[i,istep]==0

@@ -1,7 +1,10 @@
 diag_turbulence=True
+Eturb_pot0=True#include pot0 when calculating Eturb
+Eturb_dpot=True#include dpot when calculating Eturb
 diag_collision=True
 diag_source=False
 diag_neutral=False
+diag_f0=False
 xgc_dir='/path/to/xgc'
 orbit_dir='./input_dir'
 bp_read=False

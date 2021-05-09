@@ -4,7 +4,7 @@ from math import floor
 from mpi4py import MPI
 from parameters import bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
                        sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,qi,mi,sml_dt,\
-                       diag_collision,diag_turbulence,diag_neutral,diag_source
+                       diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0
 import orbit
 import grid
 
@@ -65,7 +65,7 @@ istep1=comm.bcast(istep1,root=0)
 istep2=comm.bcast(istep2,root=0)
 
 #index loop starts here
-for idx in range(1,5):
+for idx in range(1,6):
   if (idx==1):
     source='turbulence'
     if not(diag_turbulence): continue
@@ -78,6 +78,9 @@ for idx in range(1,5):
   if (idx==4):
     source='neutral'
     if not(diag_neutral): continue
+  if (idx==5):
+    source='f0'
+    if not(diag_f0): continue
   #write a header to output
   if rank==0:
     output=open(orbit_dir+'/orbit_loss_'+source+'.txt','w')
