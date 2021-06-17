@@ -36,6 +36,8 @@ def read(xgc_dir,Nr,Nz):
   fid=ad.open(fname,'r')
   tempi=fid.read('f0_T_ev')
   tempi=np.squeeze(tempi)#important for dimension match
+  #for kinetic-electron simulations, choose ion temperature
+  if np.shape(tempi)[0]>1: tempi=tempi[1,:]
   f0_smu_max=fid.read('f0_smu_max')
   f0_vp_max=fid.read('f0_vp_max')
   f0_dsmu=fid.read('f0_dsmu')
