@@ -77,6 +77,7 @@ def readf0(xgc_dir,source,idx,start_gstep,nsteps,period,min_node,max_node):
       tmp=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
     df0g[:,:,:,istep]=tmp
+    fid.close()
 
 def grid_deriv_init(xgc_dir):
   global nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
@@ -148,7 +149,7 @@ def read_dpot_orb(orbit_dir):
   return
 
 def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_node):
-  from parameters import Eturb_pot0,Eturb_dpot 
+  from parameters import Eturb_pot0,Eturb_dpot
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
   for istep in range(nsteps):
@@ -158,6 +159,7 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_
     dpot=fid.read('dpot')
     pot0=fid.read('pot0')
     dpot_turb=float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-dpot_orb
+    fid.close()
     for i in range(min_node-1,max_node):
       for j in range(nelement_r[i]):
         ind=eindex_r[j,i]
@@ -167,11 +169,61 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_
         Ez[i,istep]=Ez[i,istep]+dpot_turb[ind-1]*value_z[j,i]
     if grad_psitheta:
       for i in range(min_node-1,max_node):
-        if (basis[i]==0)and(psi_only): Ez[i,istep]==0
+        if (basis[i]==0)and(psi_only): Ez[i,istep]=0
   Er=-Er
   Ez=-Ez
   return Er,Ez
  
+def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_node):
+  import cupy as cp
+  grid_deriv_kernel=cp.RawKernel(r'''
+  extern "C" __global__
+  void grid_deriv(double* dpot_turb,double* Er, double* Ez,int min_node,int max_node,int nnode,\
+    int* nelement_r,int* nelement_z,int* eindex_r,int* eindex_z,double* value_r,double* value_z,
+    bool grad_psitheta,bool psi_only,int* basis)
+  {
+    int inode,ind;
+    inode=blockDim.x*blockIdx.x+threadIdx.x+min_node-1;
+    if (inode>=max_node) return;
+    for(int j=0;j<nelement_r[inode];j++){
+      ind=eindex_r[j*nnode+inode];
+      Er[inode]=Er[inode]+dpot_turb[ind-1]*value_r[j*nnode+inode]; 
+    }
+    for(int j=0;j<nelement_z[inode];j++){
+      ind=eindex_z[j*nnode+inode];
+      Ez[inode]=Ez[inode]+dpot_turb[ind-1]*value_z[j*nnode+inode]; 
+    }
+    if ((grad_psitheta)&&(basis[inode]==0)&&(psi_only)) Ez[inode]=0;
+  }
+  ''','grid_deriv') 
+  from parameters import Eturb_pot0,Eturb_dpot
+  Er=np.zeros((nnode,nsteps),dtype=float)
+  Ez=np.zeros((nnode,nsteps),dtype=float)
+  for istep in range(nsteps):
+    gstep=start_gstep+istep*period
+    fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+    fid=ad.open(fname,'r')
+    dpot=fid.read('dpot')
+    pot0=fid.read('pot0')
+    dpot_turb_gpu=cp.array(float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-dpot_orb,dtype=cp.float64)
+    fid.close()
+    Er_gpu=cp.zeros((nnode,),dtype=cp.float64)
+    Ez_gpu=cp.zeros((nnode,),dtype=cp.float64)
+    nelement_r_gpu=cp.array(nelement_r,dtype=cp.int32)
+    nelement_z_gpu=cp.array(nelement_z,dtype=cp.int32)
+    eindex_r_gpu=cp.array(eindex_r,dtype=cp.int32).ravel(order='C')
+    eindex_z_gpu=cp.array(eindex_z,dtype=cp.int32).ravel(order='C')
+    value_r_gpu=cp.array(value_r,dtype=cp.float64).ravel(order='C')
+    value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
+    basis_gpu=cp.array(basis,dtype=cp.int32)
+    grid_deriv_kernel((max_node-min_node+1,),(1,),(dpot_turb_gpu,Er_gpu,Ez_gpu,min_node,max_node,nnode,\
+          nelement_r_gpu,nelement_z_gpu,eindex_r_gpu,eindex_z_gpu,value_r_gpu,value_z_gpu,\
+          grad_psitheta,psi_only,basis_gpu))
+    Er[:,istep]=-cp.asnumpy(Er_gpu)
+    Ez[:,istep]=-cp.asnumpy(Ez_gpu)
+
+  return Er,Ez
+
 def search_tr2(xy):
    itr=-1
    p=np.zeros((3,),dtype=float)

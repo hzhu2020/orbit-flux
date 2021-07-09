@@ -96,8 +96,13 @@ for idx in range(1,6):
     if(rank==0): print('Calculating',source+' flux, iloop=',iloop,flush=True)
     grid.readf0(xgc_dir,source,idx,start_gstep_loop,nsteps_loop,period,min_node,max_node)
     #prepare turbulence electric field
-    if idx==1: Er_node,Ez_node=grid.Eturb(xgc_dir,start_gstep_loop,nsteps_loop,period,\
-                                 sml_grad_psitheta,False,min_node,max_node)
+    if idx==1:
+      if use_gpu:
+        Er_node,Ez_node=grid.Eturb_gpu(xgc_dir,start_gstep_loop,nsteps_loop,period,\
+                                   sml_grad_psitheta,False,min_node,max_node)
+      else:
+        Er_node,Ez_node=grid.Eturb(xgc_dir,start_gstep_loop,nsteps_loop,period,\
+                                   sml_grad_psitheta,False,min_node,max_node)
     dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
     for iorb in range(orbit.iorb1,orbit.iorb2+1):
       imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
