@@ -33,9 +33,8 @@ grid.read(xgc_dir,Nr,Nz)
 if diag_turbulence:
   if rank==0: print('Reading additional information for turbulence diagnosis...',flush=True)
   grid.additional_Bfield(xgc_dir,Nr,Nz)
-  if rank==0:
-    grid.grid_deriv_init(xgc_dir)
-    grid.read_dpot_orb(orbit_dir)
+  grid.grid_deriv_init(xgc_dir)
+  grid.read_dpot_orb(orbit_dir)
 
 if rank==0: print('Preparing orbit locations...',flush=True)
 t_beg=time()
@@ -97,13 +96,8 @@ for idx in range(1,6):
     if(rank==0): print('Calculating',source+' flux, iloop=',iloop,flush=True)
     grid.readf0(xgc_dir,source,idx,start_gstep_loop,nsteps_loop,period,min_node,max_node)
     #prepare turbulence electric field
-    if idx==1:
-      if rank==0:
-        Er_node,Ez_node=grid.Eturb(xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
-      else:
-        Er_node,Ez_node=[None]*2
-      Er_node,Ez_node=comm.bcast((Er_node,Ez_node),root=0)
-
+    if idx==1: Er_node,Ez_node=grid.Eturb(xgc_dir,start_gstep_loop,nsteps_loop,period,\
+                                 sml_grad_psitheta,False,min_node,max_node)
     dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
     for iorb in range(orbit.iorb1,orbit.iorb2+1):
       imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1

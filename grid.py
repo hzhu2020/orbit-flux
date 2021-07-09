@@ -147,7 +147,7 @@ def read_dpot_orb(orbit_dir):
   fid.close()
   return
 
-def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
+def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_node):
   from parameters import Eturb_pot0,Eturb_dpot 
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
@@ -158,7 +158,7 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     dpot=fid.read('dpot')
     pot0=fid.read('pot0')
     dpot_turb=float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-dpot_orb
-    for i in range(nnode):
+    for i in range(min_node-1,max_node):
       for j in range(nelement_r[i]):
         ind=eindex_r[j,i]
         Er[i,istep]=Er[i,istep]+dpot_turb[ind-1]*value_r[j,i]
@@ -166,7 +166,7 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
         ind=eindex_z[j,i]
         Ez[i,istep]=Ez[i,istep]+dpot_turb[ind-1]*value_z[j,i]
     if grad_psitheta:
-      for i in range(nnode):
+      for i in range(min_node-1,max_node):
         if (basis[i]==0)and(psi_only): Ez[i,istep]==0
   Er=-Er
   Ez=-Ez
