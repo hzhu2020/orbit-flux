@@ -58,7 +58,7 @@ def read(xgc_dir,Nr,Nz):
   R,Z=np.meshgrid(rlin,zlin)
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
 
-def readf0(xgc_dir,source,idx,start_gstep,nsteps,period,min_node,max_node):
+def readf0(xgc_dir,source,idx,start_gstep,nsteps,period):
   global df0g
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
@@ -148,8 +148,9 @@ def read_dpot_orb(orbit_dir):
   fid.close()
   return
 
-def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_node):
+def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   from parameters import Eturb_pot0,Eturb_dpot
+  global Er,Ez
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
   for istep in range(nsteps):
@@ -172,9 +173,9 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_
         if (basis[i]==0)and(psi_only): Ez[i,istep]=0
   Er=-Er
   Ez=-Ez
-  return Er,Ez
+  return
  
-def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,max_node):
+def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   import cupy as cp
   grid_deriv_kernel=cp.RawKernel(r'''
   extern "C" __global__
@@ -197,6 +198,7 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,
   }
   ''','grid_deriv') 
   from parameters import Eturb_pot0,Eturb_dpot
+  global Er,Ez
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
   for istep in range(nsteps):
@@ -222,7 +224,7 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only,min_node,
     Er[:,istep]=-cp.asnumpy(Er_gpu)
     Ez[:,istep]=-cp.asnumpy(Ez_gpu)
 
-  return Er,Ez
+  return
 
 def search_tr2(xy):
    itr=-1
@@ -342,6 +344,7 @@ def gradF_orb(F,itr,nsteps):
 
 def node_range(tri_psi):
   from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
+  global min_node,max_node,itr_save,p_save
   min_node=nnode
   max_node=0
   mynorb=iorb2-iorb1+1
@@ -360,7 +363,7 @@ def node_range(tri_psi):
           node=nd[i,itr-1]
           if (node>max_node): max_node=node
           if (node<min_node): min_node=node
-  return min_node,max_node,itr_save,p_save
+  return
 
 def node_range_gpu(tri_psi):
   import cupy as cp
@@ -475,6 +478,7 @@ def node_range_gpu(tri_psi):
   }
   ''', 'node_range')
   from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
+  global min_node,max_node,itr_save,p_save
   min_node=nnode
   max_node=0
   mynorb=iorb2-iorb1+1
@@ -512,4 +516,4 @@ def node_range_gpu(tri_psi):
           if (node>max_node): max_node=node
           if (node<min_node): min_node=node
 
-  return min_node,max_node,itr_save,p_save
+  return
