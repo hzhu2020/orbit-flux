@@ -100,8 +100,13 @@ for idx in range(1,6):
       else:
         grid.Eturb(xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
     dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
+    if use_gpu: main_loop.copy_data(idx,nsteps_loop)
     for iorb in range(orbit.iorb1,orbit.iorb2+1):
-      dF_orb[iorb-orbit.iorb1,:]=main_loop.dF_orb_main(iorb,nsteps_loop,idx)
+      if use_gpu:
+        dF_orb[iorb-orbit.iorb1,:]=main_loop.dF_orb_main_gpu(iorb,nsteps_loop,idx)
+      else:
+        dF_orb[iorb-orbit.iorb1,:]=main_loop.dF_orb_main(iorb,nsteps_loop,idx)
+    if use_gpu: main_loop.clear_data()
     #end for iorb
     #write outputs
     iorb1_list=comm.gather(orbit.iorb1,root=0)

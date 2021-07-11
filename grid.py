@@ -6,7 +6,7 @@ from scipy.interpolate import griddata
 def read(xgc_dir,Nr,Nz):
   global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
-         B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp
+         B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
   fname=xgc_dir+'/xgc.mesh.bp'
   fid=ad.open(fname,'r')
   rz=fid.read('/coordinates/values')
@@ -43,6 +43,7 @@ def read(xgc_dir,Nr,Nz):
   f0_dsmu=fid.read('f0_dsmu')
   f0_dvp=fid.read('f0_dvp')
   f0_nvp=fid.read('f0_nvp')
+  f0_nmu=fid.read('f0_nmu')
   fid.close()
   #XGC outputs in Fortran order but here the order is different
   guess_table=np.transpose(guess_table)
@@ -223,6 +224,12 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
           grad_psitheta,psi_only,basis_gpu))
     Er[:,istep]=-cp.asnumpy(Er_gpu)
     Ez[:,istep]=-cp.asnumpy(Ez_gpu)
+
+  del Er_gpu,Ez_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
+  mempool = cp.get_default_memory_pool()
+  pinned_mempool = cp.get_default_pinned_memory_pool()
+  mempool.free_all_blocks()
+  pinned_mempool.free_all_blocks()
 
   return
 
@@ -515,5 +522,10 @@ def node_range_gpu(tri_psi):
           node=nd[i,itr-1]
           if (node>max_node): max_node=node
           if (node<min_node): min_node=node
-
+  del guess_min_gpu,inv_guess_d_gpu,guess_xtable_gpu,guess_list_gpu,guess_count_gpu,mapping_gpu,\
+      nd_gpu,rlin_gpu,zlin_gpu,psi2d_gpu,psi_rz_gpu
+  mempool = cp.get_default_memory_pool()
+  pinned_mempool = cp.get_default_pinned_memory_pool()
+  mempool.free_all_blocks()
+  pinned_mempool.free_all_blocks()
   return

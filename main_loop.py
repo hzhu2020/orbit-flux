@@ -35,8 +35,6 @@ def dF_orb_main(iorb,nsteps_loop,idx):
         if idx==1:
           rho=mi*vp/qi/B
           D=1.0/(1.0+rho*grid.nb_curl_nb[node-1])
-          curlbr=grid.curlbr[node-1]
-          curlbz=grid.curlbz[node-1]
           if grid.basis[node-1]==1:
             E[0,:]=grid.Er[node-1,:]
             E[1,:]=grid.Ez[node-1,:]
@@ -83,3 +81,204 @@ def dF_orb_main(iorb,nsteps_loop,idx):
     dF_orb[:]=dF_orb[:]+df0g_orb[:]*(mi/np.pi/2)**1.5/1.6022E-19
   #end for it_orb
   return dF_orb
+
+def dF_orb_main_gpu(iorb,nsteps_loop,idx):
+  import orbit,grid
+  import numpy as np
+  import cupy as cp
+  from math import floor
+  from parameters import mi,qi,sml_dt
+  dF_orb_kernel=cp.RawKernel(r'''
+  extern "C" __device__
+  void gradF_orb(double** F,int itr,int num_tri,int* nd,double* rz,int nsteps_loop,double** dFdx)
+  {
+    double r[3],z[3],xsj;
+    int node;
+    for(int k=0;k<3;k++){
+      node=nd[k*num_tri+itr-1];
+      r[k]=rz[(node-1)*2+0];
+      z[k]=rz[(node-1)*2+1];
+    }
+    xsj=r[0]*(z[1]-z[2])+r[1]*(z[2]-z[0])+r[2]*(z[0]-z[1]);
+    for(int istep=0;istep<nsteps_loop;istep++){
+      dFdx[0][istep]=F[0][istep]*(z[1]-z[2])+F[1][istep]*(z[2]-z[0])+F[2][istep]*(z[0]-z[1]);
+      dFdx[0][istep]=dFdx[0][istep]/xsj;
+      dFdx[1][istep]=F[0][istep]*(r[2]-r[1])+F[1][istep]*(r[0]-r[2])+F[2][istep]*(r[1]-r[0]);
+      dFdx[1][istep]=dFdx[1][istep]/xsj;
+    }
+  }
+  extern "C" __global__
+  void dF_orb_main(double* dF_orb,double mu,int nsteps_loop,int steps_orb,int idx,\
+    double* rt,double* zt,double* vpt,int* itr_save,double* p_save,int* nd,int num_tri,\
+    double* B,double* Ti,double mi,double qi,double* nb_curl_nb,double* curlbr,double* curlbz,int* basis,\
+    double* Er,double* Ez,double f0_smu_max,double f0_vp_max,double f0_dsmu,double f0_dvp,int f0_nvp,\
+    int f0_nmu,int min_node,int max_node,double* df0g,double sml_dt,double dt_orb,double* rz)
+  {
+    int it_orb,itr,node,imu_f0,ivp_f0,imu,ivp,inode,nnode,nvp,nmu;
+    double p[3],tmp[2][2],r,z,vp,Br,Bz,Bphi,Bmag,tempi,mu_n,vp_n,rho,D,wmu[2],wvp[2],smu;
+    double *df0g_orb,*dvpdt,*dFdvp,*value;
+    double **E,**dxdt,**F_node,**grad_F;
+    it_orb=blockDim.x*blockIdx.x+threadIdx.x;
+    if (it_orb>=steps_orb) return;
+    df0g_orb=new double [nsteps_loop];
+    value=new double [nsteps_loop];
+    for(int istep=0;istep<nsteps_loop;istep++){
+      df0g_orb[istep]=0.; value[istep]=0.;
+    }
+    nvp=2*f0_nvp+1;
+    nmu=f0_nmu+1;
+    nnode=max_node-min_node+1;
+    if (idx==1){
+      E=new double* [2];
+      E[0]=new double [nsteps_loop];
+      E[1]=new double [nsteps_loop];
+      dxdt=new double* [2];
+      dxdt[0]=new double[nsteps_loop];
+      dxdt[1]=new double[nsteps_loop];
+      F_node=new double* [3];
+      F_node[0]=new double[nsteps_loop];
+      F_node[1]=new double[nsteps_loop];
+      F_node[2]=new double[nsteps_loop];
+      grad_F=new double* [2];
+      grad_F[0]=new double [nsteps_loop];
+      grad_F[1]=new double [nsteps_loop];
+      dvpdt=new double [nsteps_loop];
+      dFdvp=new double [nsteps_loop];
+      for(int istep=0;istep<nsteps_loop;istep++){
+        E[0][istep]=0.; E[1][istep]=0.;
+        F_node[0][istep]=0.; F_node[1][istep]=0.; F_node[2][istep]=0.;
+        grad_F[0][istep]=0.;grad_F[1][istep]=0.;
+        dxdt[0][istep]=0.; dxdt[1][istep]=0.;
+        dvpdt[istep]=0.;dFdvp[istep]=0.;
+      }
+    }
+    r=rt[it_orb];z=zt[it_orb];vp=vpt[it_orb];itr=itr_save[it_orb];
+    p[0]=p_save[it_orb*3+0];p[1]=p_save[it_orb*3+1];p[2]=p_save[it_orb*3+2];
+    if (itr>0){
+      for(int k=0;k<3;k++){
+        node=nd[k*num_tri+itr-1];
+        Br=B[(node-1)*3+0];Bz=B[(node-1)*3+1];Bphi=B[(node-1)*3+2];
+        Bmag=sqrt(Br*Br+Bz*Bz+Bphi*Bphi);
+        tempi=Ti[node-1]*1.6022E-19;
+        mu_n=2*mu*Bmag/tempi;
+        vp_n=vp/sqrt(tempi/mi);
+        if (idx==1){
+          rho=mi*vp/qi/Bmag;
+          D=1.0/(1.0+rho*nb_curl_nb[node-1]);
+          for(int istep=0;istep<nsteps_loop;istep++){
+            if (basis[node-1]==1){
+              E[0][istep]=Er[(node-1)*nsteps_loop+istep];
+              E[1][istep]=Er[(node-1)*nsteps_loop+istep];
+            }
+            else{
+              E[0][istep]=(Er[(node-1)*nsteps_loop+istep]*Bz+Ez[(node-1)*nsteps_loop+istep]*Br)/sqrt(Br*Br+Bz*Bz);
+              E[1][istep]=(-Er[(node-1)*nsteps_loop+istep]*Br+Ez[(node-1)*nsteps_loop+istep]*Bz)/sqrt(Br*Br+Bz*Bz);
+            }
+          dxdt[0][istep]=dxdt[0][istep]+p[k]*D*(-Bphi)*E[1][istep]/(Bmag*Bmag);
+          dxdt[1][istep]=dxdt[1][istep]+p[k]*D*(+Bphi)*E[0][istep]/(Bmag*Bmag);
+          dvpdt[istep]=dvpdt[istep]+p[k]*D*qi/mi*\
+               (E[0][istep]*(Br/Bmag+rho*curlbr[node-1])+E[1][istep]*(Bz/Bmag+rho*curlbz[node-1]));
+          }//end for istep
+        }//end if idx==1
+        if((mu_n<f0_smu_max*f0_smu_max)&&(vp_n<f0_vp_max)&&(vp_n>=-f0_vp_max)){
+          smu=sqrt(mu_n);
+          wmu[0]=smu/f0_dsmu;
+          imu_f0=floor(wmu[0]);
+          wmu[1]=wmu[0]-double(imu_f0);
+          wmu[0]=1.0-wmu[1];
+          wvp[0]=vp_n/f0_dvp;
+          ivp_f0=floor(wvp[0]);
+          wvp[1]=wvp[0]-double(ivp_f0);
+          wvp[0]=1.0-wvp[1];
+          imu=imu_f0;
+          ivp=ivp_f0+f0_nvp;
+          inode=node-min_node;
+          for(int istep=0;istep<nsteps_loop;istep++){
+            tmp[0][0]=df0g[ivp*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+imu*nsteps_loop+istep];
+            tmp[0][1]=df0g[ivp*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+(imu+1)*nsteps_loop+istep];
+            tmp[1][0]=df0g[(ivp+1)*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+imu*nsteps_loop+istep];
+            tmp[1][1]=df0g[(ivp+1)*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+(imu+1)*nsteps_loop+istep];
+            value[istep]=tmp[0][0]*wvp[0]*wmu[0]+tmp[0][1]*wvp[0]*wmu[1]\
+                        +tmp[1][0]*wvp[1]*wmu[0]+tmp[1][1]*wvp[1]*wmu[1];
+            if (idx==1){
+              F_node[k][istep]=value[istep]/sqrt(2*mu*Bmag);
+              dFdvp[istep]=dFdvp[istep]+(wmu[0]*(tmp[1][0]-tmp[0][0])+wmu[1]*(tmp[1][1]-tmp[0][1]))\
+                           *p[k]/sqrt(2*mu*Bmag)/(f0_dvp*sqrt(tempi/mi));
+            }
+            else{
+              df0g_orb[istep]=df0g_orb[istep]+value[istep]*p[k]/sqrt(2*mu*Bmag);
+            }
+          }
+        }
+      }//end for k
+      if (idx==1){
+        gradF_orb(F_node,itr,num_tri,nd,rz,nsteps_loop,grad_F);
+        for(int istep=0;istep<nsteps_loop;istep++){
+          df0g_orb[istep]=-dxdt[0][istep]*grad_F[0][istep]-dxdt[1][istep]*grad_F[1][istep]\
+                          -dvpdt[istep]*dFdvp[istep];
+          df0g_orb[istep]=df0g_orb[istep]*sml_dt;
+        }
+      }
+    }//end if itr>0
+    for(int istep=0;istep<nsteps_loop;istep++){
+      df0g_orb[istep]=df0g_orb[istep]*dt_orb/sml_dt;
+      dF_orb[it_orb*nsteps_loop+istep]=df0g_orb[istep]*pow(mi/atan(1.)/8,1.5)/1.6022E-19;
+    }
+    delete [] df0g_orb;
+    delete [] value;
+    if (idx==1){
+     delete [] E[0]; delete [] E[1]; delete [] E;
+     delete [] grad_F[0]; delete [] grad_F[1]; delete [] grad_F;
+     delete [] dxdt[0]; delete [] dxdt[1]; delete [] dxdt;
+     delete [] F_node[0]; delete [] F_node[1];
+     delete [] F_node[2]; delete [] F_node;
+     delete [] dvpdt; delete [] dFdvp;
+    }
+  }
+  ''','dF_orb_main')
+  imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
+  mu=orbit.mu_orb[imu_orb-1]
+  rt_gpu=cp.array(orbit.R_orb[iorb-orbit.iorb1,:],dtype=cp.float64)
+  zt_gpu=cp.array(orbit.Z_orb[iorb-orbit.iorb1,:],dtype=cp.float64)
+  vpt_gpu=cp.array(orbit.vp_orb[iorb-orbit.iorb1,:],dtype=cp.float64)
+  itr_gpu=cp.array(grid.itr_save[iorb-orbit.iorb1,:],dtype=cp.int32)
+  p_gpu=cp.array(grid.p_save[iorb-orbit.iorb1,:,:],dtype=cp.float64).ravel(order='C')
+  num_tri=np.shape(grid.nd)[1]
+  dF_orb_gpu=cp.zeros((nsteps_loop*orbit.nt,),dtype=cp.float64)
+  dF_orb_kernel((orbit.nt,),(1,),(dF_orb_gpu,mu,int(nsteps_loop),int(orbit.steps_orb[iorb-1]),int(idx),\
+     rt_gpu,zt_gpu,vpt_gpu,itr_gpu,p_gpu,nd_gpu,int(num_tri),B_gpu,Ti_gpu,mi,qi,nb_curl_nb_gpu,curlbr_gpu,\
+     curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,float(grid.f0_smu_max),float(grid.f0_vp_max),float(grid.f0_dsmu),\
+     float(grid.f0_dvp),int(grid.f0_nvp),int(grid.f0_nmu),int(grid.min_node),int(grid.max_node),df0g_gpu,\
+     sml_dt,orbit.dt_orb[iorb-1],rz_gpu))
+  dF_orb=cp.asnumpy(dF_orb_gpu).reshape((orbit.nt,nsteps_loop),order='C')
+  return np.sum(dF_orb,axis=0)
+
+def copy_data(idx,nsteps_loop):
+  import cupy as cp
+  import grid,orbit
+  global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
+  df0g_gpu=cp.array(grid.df0g,dtype=cp.float64).ravel(order='C')
+  nd_gpu=cp.array(grid.nd,dtype=cp.int32).ravel(order='C')
+  nb_curl_nb_gpu=cp.array(grid.nb_curl_nb,dtype=cp.float64)
+  curlbr_gpu=cp.array(grid.curlbr,dtype=cp.float64)
+  curlbz_gpu=cp.array(grid.curlbz,dtype=cp.float64)
+  basis_gpu=cp.array(grid.basis,dtype=cp.int32)
+  if idx==1:
+    Er_gpu=cp.array(grid.Er,dtype=cp.float64).ravel(order='C')
+    Ez_gpu=cp.array(grid.Ez,dtype=cp.float64).ravel(order='C')
+  else:
+    Er_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
+    Ez_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
+  B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='C')
+  Ti_gpu=cp.array(grid.tempi,dtype=cp.float64)
+  rz_gpu=cp.array(grid.rz,dtype=cp.float64).ravel(order='C')
+  return
+
+def clear_data():
+  import cupy
+  global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
+  del df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
+  mempool = cupy.get_default_memory_pool()
+  pinned_mempool = cupy.get_default_pinned_memory_pool()
+  mempool.free_all_blocks()
+  pinned_mempool.free_all_blocks()
