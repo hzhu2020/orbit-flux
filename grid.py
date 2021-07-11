@@ -185,7 +185,7 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     bool grad_psitheta,bool psi_only,int* basis)
   {
     int inode,ind;
-    inode=blockDim.x*blockIdx.x+threadIdx.x+min_node-1;
+    inode=blockIdx.x+min_node-1;
     if (inode>=max_node) return;
     for(int j=0;j<nelement_r[inode];j++){
       ind=eindex_r[j*nnode+inode];
@@ -202,6 +202,13 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   global Er,Ez
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
+  nelement_r_gpu=cp.array(nelement_r,dtype=cp.int32)
+  nelement_z_gpu=cp.array(nelement_z,dtype=cp.int32)
+  eindex_r_gpu=cp.array(eindex_r,dtype=cp.int32).ravel(order='C')
+  eindex_z_gpu=cp.array(eindex_z,dtype=cp.int32).ravel(order='C')
+  value_r_gpu=cp.array(value_r,dtype=cp.float64).ravel(order='C')
+  value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
+  basis_gpu=cp.array(basis,dtype=cp.int32)
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
@@ -212,13 +219,6 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     fid.close()
     Er_gpu=cp.zeros((nnode,),dtype=cp.float64)
     Ez_gpu=cp.zeros((nnode,),dtype=cp.float64)
-    nelement_r_gpu=cp.array(nelement_r,dtype=cp.int32)
-    nelement_z_gpu=cp.array(nelement_z,dtype=cp.int32)
-    eindex_r_gpu=cp.array(eindex_r,dtype=cp.int32).ravel(order='C')
-    eindex_z_gpu=cp.array(eindex_z,dtype=cp.int32).ravel(order='C')
-    value_r_gpu=cp.array(value_r,dtype=cp.float64).ravel(order='C')
-    value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
-    basis_gpu=cp.array(basis,dtype=cp.int32)
     grid_deriv_kernel((max_node-min_node+1,),(1,),(dpot_turb_gpu,Er_gpu,Ez_gpu,min_node,max_node,nnode,\
           nelement_r_gpu,nelement_z_gpu,eindex_r_gpu,eindex_z_gpu,value_r_gpu,value_z_gpu,\
           grad_psitheta,psi_only,basis_gpu))
@@ -467,7 +467,7 @@ def node_range_gpu(tri_psi):
   {
       double r,z,p[3],tmp; 
       int it_orb,itr[1],ilo,jlo,ij[2],ix,iy,istart,iend; 
-      it_orb=blockDim.x*blockIdx.x+threadIdx.x;
+      it_orb=blockIdx.x;
       if (it_orb>=steps_orb) return;
       r=rt[it_orb];
       z=zt[it_orb];

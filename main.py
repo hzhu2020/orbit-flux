@@ -31,7 +31,7 @@ else:
 if rank==0: print('Reading grid information...',flush=True)
 grid.read(xgc_dir,Nr,Nz)
 if diag_turbulence:
-  if rank==0: print('Reading additional information for turbulence diagnosis...',flush=True)
+  if rank==0: print('Reading additional information for turbulence flux diagnostic...',flush=True)
   grid.additional_Bfield(xgc_dir,Nr,Nz)
   grid.grid_deriv_init(xgc_dir)
   grid.read_dpot_orb(orbit_dir)
@@ -132,7 +132,7 @@ for idx in range(1,6):
         if((iloop==nloops-1)and(istep==nsteps_loop-1)): output.write('%8d'%-1)
         output.close()
     t_end=time()
-    if rank==0: print(source,'diagnosis, iloop=',iloop,'finished in',(t_end-t_beg)/60.,'minutes',flush=True)
+    if rank==0: print(source,'flux, iloop=',iloop,'finished in',(t_end-t_beg)/60.,'minutes',flush=True)
   #end for iloop
 comm.barrier()
 #end for idx
