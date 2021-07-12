@@ -58,6 +58,7 @@ def read(xgc_dir,Nr,Nz):
   zlin=np.linspace(min(zmesh),max(zmesh),Nz)
   R,Z=np.meshgrid(rlin,zlin)
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
+  return
 
 def readf0(xgc_dir,source,idx,start_gstep,nsteps,period):
   global df0g
@@ -79,6 +80,7 @@ def readf0(xgc_dir,source,idx,start_gstep,nsteps,period):
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
     df0g[:,:,:,istep]=tmp
     fid.close()
+  return
 
 def grid_deriv_init(xgc_dir):
   global nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
@@ -98,8 +100,9 @@ def grid_deriv_init(xgc_dir):
   eindex_z=np.transpose(eindex_z)
   value_z=np.transpose(value_z)
   fid.close()
+  return
   
-def additional_Bfield(xgc_dir,Nr,Nz): 
+def additional_Bfield(xgc_dir,Nr,Nz):
   global basis,nb_curl_nb,gradBr,gradBz,gradBphi,curlbr,curlbz,curlbphi
   fname=xgc_dir+'/xgc.grad_rz.bp'
   fid=ad.open(fname,'r')
@@ -125,6 +128,8 @@ def additional_Bfield(xgc_dir,Nr,Nz):
   for i in range(nnode):
     curlbr[i]=TwoD(R,Z,curlbr2d,rz[i,0],rz[i,1])
     curlbz[i]=TwoD(R,Z,curlbz2d,rz[i,0],rz[i,1])
+
+  return
 
 def read_dpot_orb(orbit_dir):
   global dpot_orb
@@ -289,12 +294,12 @@ def Grad(r,z,fld,Nr,Nz):
   dz=z[2]-z[1]
   gradr=np.nan*np.zeros((Nz,Nr),dtype=float)
   gradz=np.nan*np.zeros((Nz,Nr),dtype=float)
-  gradphi=np.nan*np.zeros((Nz,Nr),dtype=float)
+  gradphi=np.zeros((Nz,Nr),dtype=float)#assuming axisymmetry
   for i in range(1,Nz-1):
-    for j in range(1,Nr-1):
-      gradr[i,j]=(fld[i,j+1]-fld[i,j-1])/2/dr
-      gradz[i,j]=(fld[i+1,j]-fld[i-1,j])/2/dz
-      gradphi[i,j]=0.0 #assuming axisymmetry
+    gradz[i,:]=(fld[i+1,:]-fld[i-1,:])/2/dz
+  for j in range(1,Nr-1):
+    gradr[:,j]=(fld[:,j+1]-fld[:,j-1])/2/dr
+
   return gradr,gradz,gradphi
 
 def Curl(r,z,fldr,fldz,fldphi,Nr,Nz):
@@ -305,10 +310,11 @@ def Curl(r,z,fldr,fldz,fldphi,Nr,Nz):
   curlz=np.nan*np.zeros((Nz,Nr),dtype=float)
   curlphi=np.nan*np.zeros((Nz,Nr),dtype=float)
   for i in range(1,Nz-1):
-    for j in range(1,Nr-1):
-      curlr[i,j]=-(fldphi[i+1,j]-fldphi[i-1,j])/2/dz
-      curlphi[i,j]=(fldr[i+1,j]-fldr[i-1,j])/2/dz-(fldz[i,j+1]-fldz[i,j-1])/2/dr
-      curlz[i,j]=(r[j+1]*fldphi[i,j+1]-r[j-1]*fldphi[i,j-1])/2/dr/r[j]
+    curlr[i,:]=-(fldphi[i+1,:]-fldphi[i-1,:])/2/dz
+    curlphi[i,:]=(fldr[i+1,:]-fldr[i-1,:])/2/dz
+  for j in range(1,Nr-1):
+    curlz[:,j]=(r[j+1]*fldphi[:,j+1]-r[j-1]*fldphi[:,j-1])/2/dr/r[j]
+    curlphi[:,j]=curlphi[:,j]-(fldz[:,j+1]-fldz[:,j-1])/2/dr
   return curlr,curlz,curlphi
 
 def TwoD(x2d,y2d,f2d,xin,yin):
