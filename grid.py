@@ -466,35 +466,50 @@ def node_range_gpu(tri_psi):
     }
   }   
   extern "C" __global__
-  void node_range(double* rt,double* zt,int steps_orb,int nt,int* itr_save,double* p_save,\
+  void node_range(double* R_orb,double* Z_orb,int* steps_orb,int nt,int* itr_save,double* p_save,\
       int ihi,int jhi,int num_tri,double* guess_min,double* inv_guess_d,int* guess_xtable,int* guess_list,\
       int* guess_count,double* mapping,bool tri_psi,double* rlin,double* zlin,double psix,double* psi2d,\
-      double* psi_rz,int* nd,int Nr,int Nz) 
+      double* psi_rz,int* nd,int Nr,int Nz,int mynorb,int nblocks_max,int* min_node,int* max_node) 
   {
       double r,z,p[3],tmp; 
-      int it_orb,itr[1],ilo,jlo,ij[2],ix,iy,istart,iend; 
-      it_orb=blockIdx.x;
-      if (it_orb>=steps_orb) return;
-      r=rt[it_orb];
-      z=zt[it_orb];
-      search_tr2(r,z,itr,p,ihi,jhi,num_tri,guess_min,inv_guess_d,guess_xtable,guess_list,guess_count,mapping);
-      tmp=max(p[0],p[1]);
-      tmp=max(tmp,p[2]);
-      if ((tri_psi)&&(itr[0]>0)&&(tmp<1.0))
+      int iorb,it_orb,itr[1],ilo,jlo,ij[2],ix,iy,istart,iend,node; 
+      iorb=blockIdx.x;
+      it_orb=threadIdx.x;
+      while (iorb<mynorb)
       {
-        t_coeff_mod(r,z,rlin,zlin,p,psix,psi2d,psi_rz,itr[0],num_tri,nd,Nr,Nz);
+        if (it_orb>=steps_orb[iorb]){
+          iorb=iorb+nblocks_max;
+          continue;
+        }
+        r=R_orb[iorb*nt+it_orb];
+        z=Z_orb[iorb*nt+it_orb];
+        search_tr2(r,z,itr,p,ihi,jhi,num_tri,guess_min,inv_guess_d,guess_xtable,guess_list,guess_count,mapping);
+        tmp=max(p[0],p[1]);
+        tmp=max(tmp,p[2]);
+        if ((tri_psi)&&(itr[0]>0)&&(tmp<1.0))
+        {
+          t_coeff_mod(r,z,rlin,zlin,p,psix,psi2d,psi_rz,itr[0],num_tri,nd,Nr,Nz);
+        }
+        itr_save[iorb*nt+it_orb]=itr[0];
+        p_save[iorb*3*nt+it_orb*3+0]=p[0];
+        p_save[iorb*3*nt+it_orb*3+1]=p[1];
+        p_save[iorb*3*nt+it_orb*3+2]=p[2]; 
+        if (itr[0]>0){
+          for(int k=0;k<3;k++){
+          node=nd[k*num_tri+itr[0]-1];
+          if (node>max_node[iorb*nt+it_orb]) max_node[iorb*nt+it_orb]=node;
+          if (node<min_node[iorb*nt+it_orb]) min_node[iorb*nt+it_orb]=node;
+          }
+        }
+        iorb=iorb+nblocks_max;
       }
-      itr_save[it_orb]=itr[0];
-      p_save[it_orb*3+0]=p[0];
-      p_save[it_orb*3+1]=p[1];
-      p_save[it_orb*3+2]=p[2]; 
   }
   ''', 'node_range')
   from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
   global min_node,max_node,itr_save,p_save
-  min_node=nnode
-  max_node=0
+  nblocks_max=4096
   mynorb=iorb2-iorb1+1
+  nblocks=min(nblocks_max,mynorb)
   itr_save=np.zeros((mynorb,nt),dtype=int)
   p_save=np.zeros((mynorb,nt,3),dtype=float)
   num_tri=np.shape(mapping)[2]
@@ -510,26 +525,24 @@ def node_range_gpu(tri_psi):
   zlin_gpu=cp.array(zlin,dtype=cp.float64)
   psi2d_gpu=cp.array(psi2d,dtype=cp.float64).ravel(order='C')
   psi_rz_gpu=cp.array(psi_rz,dtype=cp.float64)
-  for iorb in range(iorb1,iorb2+1):
-    rt_gpu=cp.asarray(R_orb[iorb-iorb1,:],dtype=cp.float64)
-    zt_gpu=cp.asarray(Z_orb[iorb-iorb1,:],dtype=cp.float64)
-    itr_save_gpu=cp.zeros((nt,),dtype=cp.int32)
-    p_save_gpu=cp.zeros((nt*3,),dtype=cp.float64)
-    node_range_kernel((nt,),(1,),(rt_gpu,zt_gpu,steps_orb[iorb-1],int(nt),itr_save_gpu,p_save_gpu,\
-      int(ihi),int(jhi),int(num_tri),guess_min_gpu,inv_guess_d_gpu,guess_xtable_gpu,guess_list_gpu,\
-      guess_count_gpu,mapping_gpu,tri_psi,rlin_gpu,zlin_gpu,float(psix),psi2d_gpu,psi_rz_gpu,\
-      nd_gpu,int(rlin.size),int(zlin.size)))
-    itr_save[iorb-iorb1,:]=cp.asnumpy(itr_save_gpu)
-    p_save[iorb-iorb1,:,:]=cp.asnumpy(p_save_gpu).reshape(nt,3,order='C')
-    for it_orb in range(steps_orb[iorb-1]):
-      itr=itr_save[iorb-iorb1,it_orb]
-      if itr>0:
-        for i in range(3):
-          node=nd[i,itr-1]
-          if (node>max_node): max_node=node
-          if (node<min_node): min_node=node
+  R_orb_gpu=cp.asarray(R_orb,dtype=cp.float64).ravel(order='C')
+  Z_orb_gpu=cp.asarray(Z_orb,dtype=cp.float64).ravel(order='C')
+  steps_orb_gpu=cp.asarray(steps_orb[iorb1-1:iorb2],dtype=cp.int32)
+  itr_save_gpu=cp.zeros((mynorb*nt,),dtype=cp.int32)
+  p_save_gpu=cp.zeros((mynorb*nt*3,),dtype=cp.float64)
+  min_node_gpu=nnode*cp.ones((mynorb*nt,),dtype=cp.int32)
+  max_node_gpu=cp.zeros((mynorb*nt,),dtype=cp.int32)
+  node_range_kernel((nblocks,),(nt,),(R_orb_gpu,Z_orb_gpu,steps_orb_gpu,int(nt),itr_save_gpu,p_save_gpu,\
+    int(ihi),int(jhi),int(num_tri),guess_min_gpu,inv_guess_d_gpu,guess_xtable_gpu,guess_list_gpu,\
+    guess_count_gpu,mapping_gpu,tri_psi,rlin_gpu,zlin_gpu,float(psix),psi2d_gpu,psi_rz_gpu,\
+    nd_gpu,int(rlin.size),int(zlin.size),int(mynorb),int(nblocks_max),min_node_gpu,max_node_gpu))
+  itr_save=cp.asnumpy(itr_save_gpu).reshape((mynorb,nt),order='C')
+  p_save=cp.asnumpy(p_save_gpu).reshape((mynorb,nt,3),order='C')
+  min_node=np.asscalar(cp.asnumpy(cp.min(min_node_gpu)))
+  max_node=np.asscalar(cp.asnumpy(cp.max(max_node_gpu)))
   del guess_min_gpu,inv_guess_d_gpu,guess_xtable_gpu,guess_list_gpu,guess_count_gpu,mapping_gpu,\
-      nd_gpu,rlin_gpu,zlin_gpu,psi2d_gpu,psi_rz_gpu
+      nd_gpu,rlin_gpu,zlin_gpu,psi2d_gpu,psi_rz_gpu,R_orb_gpu,Z_orb_gpu,steps_orb_gpu,\
+      itr_save_gpu,p_save_gpu,min_node_gpu,max_node_gpu
   mempool = cp.get_default_memory_pool()
   pinned_mempool = cp.get_default_pinned_memory_pool()
   mempool.free_all_blocks()
