@@ -82,7 +82,7 @@ def dF_orb_main(iorb,nsteps_loop,idx):
   #end for it_orb
   return dF_orb
 
-def dF_orb_main_gpu(iorb,nsteps_loop,idx):
+def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
   import orbit,grid
   import numpy as np
   import cupy as cp
@@ -106,18 +106,27 @@ def dF_orb_main_gpu(iorb,nsteps_loop,idx):
     dFdx[1]=dFdx[1]/xsj;
   }
   extern "C" __global__
-  void dF_orb_main(double* dF_orb,double mu,int nsteps_loop,int steps_orb,int idx,\
-    double* rt,double* zt,double* vpt,int* itr_save,double* p_save,int* nd,int num_tri,\
-    double* B,double* Ti,double mi,double qi,double* nb_curl_nb,double* curlbr,double* curlbz,int* basis,\
-    double* Er,double* Ez,double f0_smu_max,double f0_vp_max,double f0_dsmu,double f0_dvp,int f0_nvp,\
-    int f0_nmu,int min_node,int max_node,double* df0g,double sml_dt,double dt_orb,double* rz)
+  void dF_orb_main(double* dF_orb,double* mu_orb,int nsteps_loop,int* steps_orb,int nPphi,int nH,\
+    int nt,int nblocks_max,int mynorb,int idx,double* rt,double* zt,double* vpt,int* itr_save,\
+    double* p_save,int* nd,int num_tri,double* B,double* Ti,double mi,double qi,double* nb_curl_nb,\
+    double* curlbr,double* curlbz,int* basis,double* Er,double* Ez,double f0_smu_max,double f0_vp_max,\
+    double f0_dsmu,double f0_dvp,int f0_nvp,int f0_nmu,int min_node,int max_node,double* df0g,\
+    double sml_dt,double* dt_orb,double* rz)
   {
-    int it_orb,istep,itr,node,imu_f0,ivp_f0,imu,ivp,inode,nnode,nvp,nmu;
+    int it_orb,istep,iorb,imu_orb,itr,node,imu_f0,ivp_f0,imu,ivp,inode,nnode,nvp,nmu;
     double p[3],tmp[2][2],r,z,vp,Br,Bz,Bphi,Bmag,tempi,mu_n,vp_n,rho,D,wmu[2],wvp[2],smu;
-    double df0g_orb,dvpdt,dFdvp,value,E[2],dxdt[2],F_node[3],grad_F[2];
-    it_orb=blockIdx.x;
-    istep=threadIdx.x;
-    if (it_orb>=steps_orb) return;
+    double mu,df0g_orb,dvpdt,dFdvp,value,E[2],dxdt[2],F_node[3],grad_F[2];
+    iorb=blockIdx.x/nsteps_loop;
+    istep=blockIdx.x-iorb*nsteps_loop;
+    it_orb=threadIdx.x;
+    while(iorb<mynorb)
+    {
+    if (it_orb>=steps_orb[iorb]){
+      iorb=iorb+nblocks_max;
+      continue;
+    }
+    imu_orb=iorb/(nPphi*nH);
+    mu=mu_orb[imu_orb];
     df0g_orb=0.; 
     value=0.;
     nvp=2*f0_nvp+1;
@@ -133,8 +142,11 @@ def dF_orb_main_gpu(iorb,nsteps_loop,idx):
       dvpdt=0.;
       dFdvp=0.;
     }
-    r=rt[it_orb];z=zt[it_orb];vp=vpt[it_orb];itr=itr_save[it_orb];
-    p[0]=p_save[it_orb*3+0];p[1]=p_save[it_orb*3+1];p[2]=p_save[it_orb*3+2];
+    r=rt[iorb*nt+it_orb];z=zt[iorb*nt+it_orb];
+    vp=vpt[iorb*nt+it_orb];itr=itr_save[iorb*nt+it_orb];
+    p[0]=p_save[iorb*nt*3+it_orb*3+0];
+    p[1]=p_save[iorb*nt*3+it_orb*3+1];
+    p[2]=p_save[iorb*nt*3+it_orb*3+2];
     if (itr>0){
       for(int k=0;k<3;k++){
         node=nd[k*num_tri+itr-1];
@@ -193,26 +205,34 @@ def dF_orb_main_gpu(iorb,nsteps_loop,idx):
         df0g_orb=df0g_orb*sml_dt;
       }
     }//end if itr>0
-    df0g_orb=df0g_orb*dt_orb/sml_dt;
-    dF_orb[it_orb*nsteps_loop+istep]=df0g_orb*pow(mi/atan(1.)/8,1.5)/1.6022E-19;
+    df0g_orb=df0g_orb*dt_orb[iorb]/sml_dt;
+    dF_orb[iorb*nt*nsteps_loop+it_orb*nsteps_loop+istep]=df0g_orb*pow(mi/atan(1.)/8,1.5)/1.6022E-19;
+    iorb=iorb+nblocks_max;
+    }
   }
   ''','dF_orb_main')
-  imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
-  mu=orbit.mu_orb[imu_orb-1]
-  rt_gpu=cp.array(orbit.R_orb[iorb-orbit.iorb1,:],dtype=cp.float64)
-  zt_gpu=cp.array(orbit.Z_orb[iorb-orbit.iorb1,:],dtype=cp.float64)
-  vpt_gpu=cp.array(orbit.vp_orb[iorb-orbit.iorb1,:],dtype=cp.float64)
-  itr_gpu=cp.array(grid.itr_save[iorb-orbit.iorb1,:],dtype=cp.int32)
-  p_gpu=cp.array(grid.p_save[iorb-orbit.iorb1,:,:],dtype=cp.float64).ravel(order='C')
+  nblocks_max=1024
+  mynorb=iorb2-iorb1+1
+  nblocks=min(nblocks_max,mynorb)
+  mu_orb_gpu=cp.array(orbit.mu_orb,dtype=cp.float64)
+  R_orb_gpu=cp.array(orbit.R_orb,dtype=cp.float64)
+  Z_orb_gpu=cp.array(orbit.Z_orb,dtype=cp.float64)
+  vp_orb_gpu=cp.array(orbit.vp_orb,dtype=cp.float64)
+  itr_gpu=cp.array(grid.itr_save,dtype=cp.int32)
+  p_gpu=cp.array(grid.p_save,dtype=cp.float64).ravel(order='C')
+  steps_orb_gpu=cp.array(orbit.steps_orb[iorb1-1:iorb2],dtype=cp.int32)
+  dt_orb_gpu=cp.array(orbit.dt_orb[iorb1-1:iorb2],dtype=cp.float64)
   num_tri=np.shape(grid.nd)[1]
-  dF_orb_gpu=cp.zeros((nsteps_loop*orbit.nt,),dtype=cp.float64)
-  dF_orb_kernel((orbit.nt,),(nsteps_loop,),(dF_orb_gpu,mu,int(nsteps_loop),int(orbit.steps_orb[iorb-1]),\
-     int(idx),rt_gpu,zt_gpu,vpt_gpu,itr_gpu,p_gpu,nd_gpu,int(num_tri),B_gpu,Ti_gpu,mi,qi,\
+  dF_orb_gpu=cp.zeros((mynorb*nsteps_loop*orbit.nt,),dtype=cp.float64)
+  dF_orb_kernel((nblocks*nsteps_loop,),(orbit.nt,),(dF_orb_gpu,mu_orb_gpu,int(nsteps_loop),\
+     steps_orb_gpu,int(orbit.nPphi),int(orbit.nH),int(orbit.nt),int(nblocks_max),int(mynorb),\
+     int(idx),R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,nd_gpu,int(num_tri),B_gpu,Ti_gpu,mi,qi,\
      nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,float(grid.f0_smu_max),\
      float(grid.f0_vp_max),float(grid.f0_dsmu),float(grid.f0_dvp),int(grid.f0_nvp),int(grid.f0_nmu),\
-     int(grid.min_node),int(grid.max_node),df0g_gpu,sml_dt,orbit.dt_orb[iorb-1],rz_gpu))
-  dF_orb=cp.asnumpy(dF_orb_gpu).reshape((orbit.nt,nsteps_loop),order='C')
-  return np.sum(dF_orb,axis=0)
+     int(grid.min_node),int(grid.max_node),df0g_gpu,sml_dt,dt_orb_gpu,rz_gpu))
+  dF_orb=cp.asnumpy(dF_orb_gpu).reshape((mynorb,orbit.nt,nsteps_loop),order='C')
+  del mu_orb_gpu,R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,steps_orb_gpu,dt_orb_gpu,dF_orb_gpu
+  return np.sum(dF_orb,axis=1)
 
 def copy_data(idx,nsteps_loop):
   import cupy as cp
