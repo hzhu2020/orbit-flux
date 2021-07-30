@@ -501,7 +501,7 @@ def node_range_gpu(tri_psi):
           if (node<min_node[iorb*nt+it_orb]) min_node[iorb*nt+it_orb]=node;
           }
         }
-        iorb=iorb+nblocks_max;
+      iorb=iorb+nblocks_max;
       }
   }
   ''', 'node_range')
