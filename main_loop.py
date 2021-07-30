@@ -239,20 +239,24 @@ def copy_data(idx,nsteps_loop):
   import grid,orbit
   global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
   df0g_gpu=cp.array(grid.df0g,dtype=cp.float64).ravel(order='C')
-  nd_gpu=cp.array(grid.nd,dtype=cp.int32).ravel(order='C')
-  nb_curl_nb_gpu=cp.array(grid.nb_curl_nb,dtype=cp.float64)
-  curlbr_gpu=cp.array(grid.curlbr,dtype=cp.float64)
-  curlbz_gpu=cp.array(grid.curlbz,dtype=cp.float64)
-  basis_gpu=cp.array(grid.basis,dtype=cp.int32)
-  if idx==1:
-    Er_gpu=cp.array(grid.Er,dtype=cp.float64).ravel(order='C')
-    Ez_gpu=cp.array(grid.Ez,dtype=cp.float64).ravel(order='C')
-  else:
-    Er_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
-    Ez_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
   B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='C')
   Ti_gpu=cp.array(grid.tempi,dtype=cp.float64)
   rz_gpu=cp.array(grid.rz,dtype=cp.float64).ravel(order='C')
+  nd_gpu=cp.array(grid.nd,dtype=cp.int32).ravel(order='C')
+  if idx==1:
+    Er_gpu=cp.array(grid.Er,dtype=cp.float64).ravel(order='C')
+    Ez_gpu=cp.array(grid.Ez,dtype=cp.float64).ravel(order='C')
+    nb_curl_nb_gpu=cp.array(grid.nb_curl_nb,dtype=cp.float64)
+    curlbr_gpu=cp.array(grid.curlbr,dtype=cp.float64)
+    curlbz_gpu=cp.array(grid.curlbz,dtype=cp.float64)
+    basis_gpu=cp.array(grid.basis,dtype=cp.int32)
+  else:
+    Er_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
+    Ez_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
+    nb_curl_nb_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
+    curlbr_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
+    curlbz_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
+    basis_gpu=cp.zeros((grid.nnode,),dtype=cp.int32)
   return
 
 def clear_data():

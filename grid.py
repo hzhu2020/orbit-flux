@@ -103,7 +103,7 @@ def grid_deriv_init(xgc_dir):
   return
   
 def additional_Bfield(xgc_dir,Nr,Nz):
-  global basis,nb_curl_nb,gradBr,gradBz,gradBphi,curlbr,curlbz,curlbphi
+  global basis,nb_curl_nb,curlbr,curlbz
   fname=xgc_dir+'/xgc.grad_rz.bp'
   fid=ad.open(fname,'r')
   basis=fid.read('basis')
