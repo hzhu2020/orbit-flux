@@ -1,7 +1,7 @@
 import numpy as np
 from time import time
 from mpi4py import MPI
-from parameters import bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
+from parameters import xgc,bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
                        sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0
 import orbit
@@ -29,7 +29,7 @@ else:
   orbit.read(orbit_dir,comm)
 #determine the range of nodes needed
 if rank==0: print('Reading grid information...',flush=True)
-grid.read(xgc_dir,Nr,Nz)
+grid.read(xgc,xgc_dir,Nr,Nz)
 if diag_turbulence:
   if rank==0: print('Reading additional information for turbulence flux diagnostic...',flush=True)
   grid.additional_Bfield(xgc_dir,Nr,Nz)
@@ -92,13 +92,13 @@ for idx in range(1,6):
     start_gstep_loop=start_gstep+istep1[iloop]*period
     t_beg=time()
     if(rank==0): print('Calculating',source+' flux, iloop=',iloop,flush=True)
-    grid.readf0(xgc_dir,source,idx,start_gstep_loop,nsteps_loop,period)
+    grid.readf0(xgc,xgc_dir,source,idx,start_gstep_loop,nsteps_loop,period)
     #prepare turbulence electric field
     if idx==1:
       if use_gpu:
-        grid.Eturb_gpu(xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
+        grid.Eturb_gpu(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
       else:
-        grid.Eturb(xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
+        grid.Eturb(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
     if use_gpu:
       main_loop.copy_data(idx,nsteps_loop)
       dF_orb=main_loop.dF_orb_main_gpu(orbit.iorb1,orbit.iorb2,nsteps_loop,idx)

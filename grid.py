@@ -3,13 +3,22 @@ import numpy as np
 from math import floor
 from scipy.interpolate import griddata
 
-def read(xgc_dir,Nr,Nz):
+def read(xgc,xgc_dir,Nr,Nz):
   global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
   fname=xgc_dir+'/xgc.mesh.bp'
   fid=ad.open(fname,'r')
-  rz=fid.read('/coordinates/values')
+  if xgc=='xgca':
+    rz=fid.read('/coordinates/values')
+    guess_min=fid.read('grid%guess_min')
+    inv_guess_d=fid.read('grid%inv_guess_d')
+  elif xgc=='xgc1':
+    rz=fid.read('rz')
+    guess_min=fid.read('guess_min')
+    inv_guess_d=fid.read('inv_guess_d')
+  else:
+    print('Wrong parameter xgc=',xgc)
   psi_rz=fid.read('psi')
   nnode=np.size(psi_rz)
   guess_table=fid.read('guess_table')
@@ -17,8 +26,6 @@ def read(xgc_dir,Nr,Nz):
   guess_count=fid.read('guess_count')
   guess_list=fid.read('guess_list')
   mapping=fid.read('mapping')
-  guess_min=fid.read('grid%guess_min')
-  inv_guess_d=fid.read('grid%inv_guess_d')
   nd=fid.read('nd')
   fid.close()
 
@@ -29,7 +36,12 @@ def read(xgc_dir,Nr,Nz):
 
   fname=xgc_dir+'/xgc.bfield.bp'
   fid=ad.open(fname,'r')
-  B=fid.read('bfield')
+  if xgc=='xgca':
+    B=fid.read('bfield')
+  elif xgc=='xgc1':
+    B=fid.read('/node_data[0]/values')
+  else:
+    print('Wrong parameter xgc=',xgc)
   fid.close()
 
   fname=xgc_dir+'/xgc.f0.mesh.bp'
@@ -60,23 +72,37 @@ def read(xgc_dir,Nr,Nz):
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
   return
 
-def readf0(xgc_dir,source,idx,start_gstep,nsteps,period):
+def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
   global df0g
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     if (idx==1)or(idx==5):
-      fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
+      if xgc=='xgca':
+        fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
+      elif xgc=='xgc1':
+        fname=xgc_dir+'/xgc.orbit.f0.'+'{:0>5d}'.format(gstep)+'.bp'
+      else:
+        print('Wrong parameter xgc=',xgc)
     else:
       fname=xgc_dir+'/xgc.orbit.'+source+'.'+'{:0>5d}'.format(gstep)+'.bp'
     fid=ad.open(fname,'r')
     nmu=fid.read('mudata')
     nvp=fid.read('vpdata')
+    if xgc=='xgc1': nphi=fid.read('nphi')
     n_node=max_node-min_node+1
     if istep==0: df0g=np.zeros((nvp,n_node,nmu,nsteps),dtype=float)
     if (idx==1)or(idx==5):
-      tmp=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+      if xgc=='xgca':
+        tmp=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+      elif xgc=='xgc1':
+        tmp=fid.read('i_f',start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
+        tmp=np.mean(tmp,axis=0)
     else:
-      tmp=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+      if xgc=='xgca':
+        tmp=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+      elif xgc=='xgc1':
+        tmp=fid.read('i_df0g',start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
+        tmp=np.mean(tmp,axis=0)
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
     df0g[:,:,:,istep]=tmp
     fid.close()
@@ -154,17 +180,21 @@ def read_dpot_orb(orbit_dir):
   fid.close()
   return
 
-def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
+def Eturb(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   from parameters import Eturb_pot0,Eturb_dpot
   global Er,Ez
   Er=np.zeros((nnode,nsteps),dtype=float)
   Ez=np.zeros((nnode,nsteps),dtype=float)
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
-    fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+    if xgc=='xgca':
+      fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+    elif xgc=='xgc1':
+      fname=xgc_dir+'/xgc.3d.'+'{:0>5d}'.format(gstep)+'.bp'
     fid=ad.open(fname,'r')
     dpot=fid.read('dpot')
     pot0=fid.read('pot0')
+    if xgc=='xgc1': dpot=np.mean(dpot,axis=0)
     dpot_turb=float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-dpot_orb
     fid.close()
     for i in range(min_node-1,max_node):
@@ -181,7 +211,7 @@ def Eturb(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   Ez=-Ez
   return
  
-def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
+def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   import cupy as cp
   grid_deriv_kernel=cp.RawKernel(r'''
   extern "C" __global__
@@ -216,10 +246,14 @@ def Eturb_gpu(xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   basis_gpu=cp.array(basis,dtype=cp.int32)
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
-    fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+    if xgc=='xgca':
+      fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
+    elif xgc=='xgc1':
+      fname=xgc_dir+'/xgc.3d.'+'{:0>5d}'.format(gstep)+'.bp'
     fid=ad.open(fname,'r')
     dpot=fid.read('dpot')
     pot0=fid.read('pot0')
+    if xgc=='xgc1': dpot=np.mean(dpot,axis=0)
     dpot_turb_gpu=cp.array(float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-dpot_orb,dtype=cp.float64)
     fid.close()
     Er_gpu=cp.zeros((nnode,),dtype=cp.float64)
