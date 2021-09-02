@@ -100,9 +100,13 @@ for idx in range(1,6):
       else:
         grid.Eturb(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
     if use_gpu:
-      main_loop.copy_data(idx,nsteps_loop)
-      dF_orb=main_loop.dF_orb_main_gpu(orbit.iorb1,orbit.iorb2,nsteps_loop,idx)
-      main_loop.clear_data()
+      dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
+      for iphi in range(grid.nphi):
+        main_loop.copy_data(idx,nsteps_loop,iphi)
+        dF_orb[iphi,:,:]=main_loop.dF_orb_main_gpu(orbit.iorb1,orbit.iorb2,nsteps_loop,idx)
+        comm.barrier()
+        main_loop.clear_data()
+      dF_orb=np.mean(dF_orb,axis=0)
     else:
       dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
       for iorb in range(orbit.iorb1,orbit.iorb2+1):
