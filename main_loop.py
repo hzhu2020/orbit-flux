@@ -11,11 +11,12 @@ def dF_orb_main(iorb,nsteps_loop,idx):
   for it_orb in range(orbit.steps_orb[iorb-1]):
     df0g_orb=np.zeros((grid.nphi,nsteps_loop),dtype=float)
     if idx==1:
-      E=np.zeros((grid.nphi,2,nsteps_loop),dtype=float)
-      dxdt=np.zeros((grid.nphi,2,nsteps_loop),dtype=float)
+      E=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
+      dxdt=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
       dvpdt=np.zeros((grid.nphi,nsteps_loop),dtype=float)
       F_node=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
       dFdvp=np.zeros((grid.nphi,nsteps_loop),dtype=float)
+      dFdRphi=np.zeros((grid.nphi,nsteps_loop),dtype=float)
 
     r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
     z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
@@ -35,6 +36,7 @@ def dF_orb_main(iorb,nsteps_loop,idx):
         if idx==1:
           rho=mi*vp/qi/B
           D=1.0/(1.0+rho*grid.nb_curl_nb[node-1])
+          E[:,2,:]=grid.Ephi[:,node-1,:]
           if grid.basis[node-1]==1:
             E[:,0,:]=grid.Er[:,node-1,:]
             E[:,1,:]=grid.Ez[:,node-1,:]
@@ -42,10 +44,13 @@ def dF_orb_main(iorb,nsteps_loop,idx):
             E[:,0,:]=(grid.Er[:,node-1,:]*Bz+grid.Ez[:,node-1,:]*Br)/np.sqrt(Br**2+Bz**2)
             E[:,1,:]=(-grid.Er[:,node-1,:]*Br+grid.Ez[:,node-1,:]*Bz)/np.sqrt(Br**2+Bz**2)
 
-          dxdt[:,0,:]=dxdt[:,0,:]+p[i]*D*(-Bphi)*E[:,1,:]/B**2
-          dxdt[:,1,:]=dxdt[:,1,:]+p[i]*D*(+Bphi)*E[:,0,:]/B**2
+          dxdt[:,0,:]=dxdt[:,0,:]+p[i]*D*(Bz*E[:,2,:]-Bphi*E[:,1,:])/B**2
+          dxdt[:,1,:]=dxdt[:,1,:]+p[i]*D*(Bphi*E[:,0,:]-Br*E[:,2,:])/B**2
+          dxdt[:,2,:]=dxdt[:,2,:]+p[i]*D*(Br*E[:,1,:]-Bz*E[:,0,:])/B**2
           dvpdt[:,:]=dvpdt[:,:]+p[i]*D*qi/mi*\
-               (E[:,0,:]*(Br/B+rho*grid.curlbr[node-1])+E[:,1,:]*(Bz/B+rho*grid.curlbz[node-1]))
+               (E[:,0,:]*(Br/B+rho*grid.curlbr[node-1])\
+               +E[:,1,:]*(Bz/B+rho*grid.curlbz[node-1])\
+               +E[:,2,:]*(Bphi/B+rho*grid.curlbphi[node-1]))
         #end if idx
         if (mu_n<grid.f0_smu_max**2)and(vp_n<grid.f0_vp_max)and(vp_n>=-grid.f0_vp_max):
           wmu=np.zeros((2,),dtype=float)
@@ -69,12 +74,20 @@ def dF_orb_main(iorb,nsteps_loop,idx):
             F_node[:,i,:]=value[:,:]/np.sqrt(2*mu*B)
             dFdvp[:,:]=dFdvp[:,:]+(wmu[0]*(tmp[1,0,:,:]-tmp[0,0,:,:])+wmu[1]*(tmp[1,1,:,:]-tmp[0,1,:,:]))\
                    *p[i]/np.sqrt(2*mu*B)/(grid.f0_dvp*np.sqrt(tempi/mi))
+            if grid.nphi>1:
+              dphi=2*np.pi/float(grid.nphi*grid.nwedge)
+              for iphi in range(grid.nphi):
+                iphip1=(iphi+1)%grid.nphi
+                iphim1=(iphi-1)%grid.nphi
+                dFdRphi[iphi,:]=dFdRphi[iphi,:]+p[i]*\
+                                (F_node[iphip1,i,:]-F_node[iphim1,i,:])/2/dphi/grid.rz[node-1,0]
           else:
             df0g_orb[:,:]=df0g_orb[:,:]+value[:,:]*p[i]/np.sqrt(2*mu*B)
       #end for i
       if idx==1:
         grad_F=grid.gradF_orb(F_node,itr,nsteps_loop)
-        df0g_orb[:,:]=-dxdt[:,0,:]*grad_F[:,0,:]-dxdt[:,1,:]*grad_F[:,1,:]-dvpdt[:,:]*dFdvp[:,:]
+        df0g_orb[:,:]=-dxdt[:,0,:]*grad_F[:,0,:]-dxdt[:,1,:]*grad_F[:,1,:]\
+                      -dxdt[:,2,:]*dFdRphi[:,:]-dvpdt[:,:]*dFdvp[:,:]
         df0g_orb[:,:]=df0g_orb[:,:]*sml_dt
     #end if itr
     df0g_orb[:,:]=df0g_orb[:,:]*orbit.dt_orb[iorb-1]/sml_dt
@@ -109,13 +122,13 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
   void dF_orb_main(double* dF_orb,double* mu_orb,int nsteps_loop,int* steps_orb,int nPphi,int nH,\
     int nt,int nblocks_max,int mynorb,int idx,double* rt,double* zt,double* vpt,int* itr_save,\
     double* p_save,int* nd,int num_tri,double* B,double* Ti,double mi,double qi,double* nb_curl_nb,\
-    double* curlbr,double* curlbz,int* basis,double* Er,double* Ez,double f0_smu_max,double f0_vp_max,\
-    double f0_dsmu,double f0_dvp,int f0_nvp,int f0_nmu,int min_node,int max_node,double* df0g,\
-    double sml_dt,double* dt_orb,double* rz,int iorb1)
+    double* curlbr,double* curlbz,double* curlbphi,int* basis,double* Er,double* Ez,double* Ephi,
+    double f0_smu_max,double f0_vp_max,double f0_dsmu,double f0_dvp,int f0_nvp,int f0_nmu,int min_node,\
+    int max_node,double* df0g,double* dFdphi,double sml_dt,double* dt_orb,double* rz,int iorb1,int nphi)
   {
     int it_orb,istep,iorb,imu_orb,itr,node,imu_f0,ivp_f0,imu,ivp,inode,nnode,nvp,nmu;
     double p[3],tmp[2][2],r,z,vp,Br,Bz,Bphi,Bmag,tempi,mu_n,vp_n,rho,D,wmu[2],wvp[2],smu;
-    double mu,df0g_orb,dvpdt,dFdvp,value,E[2],dxdt[2],F_node[3],grad_F[2];
+    double mu,df0g_orb,dvpdt,dFdvp,dFdRphi,value,E[3],dxdt[3],F_node[3],grad_F[2];
     iorb=blockIdx.x/nsteps_loop;
     istep=blockIdx.x-iorb*nsteps_loop;
     it_orb=threadIdx.x;
@@ -135,12 +148,13 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
     if (idx==1){
       dvpdt=0.;
       dFdvp=0.;
-      E[0]=0.; E[1]=0.;
+      E[0]=0.; E[1]=0.; E[2]=0.;
       F_node[0]=0.; F_node[1]=0.; F_node[2]=0.;
       grad_F[0]=0.; grad_F[1]=0.;
-      dxdt[0]=0.; dxdt[1]=0.;
+      dxdt[0]=0.; dxdt[1]=0.; dxdt[2]=0.;
       dvpdt=0.;
       dFdvp=0.;
+      dFdRphi=0.;
     }
     r=rt[iorb*nt+it_orb];z=zt[iorb*nt+it_orb];
     vp=vpt[iorb*nt+it_orb];itr=itr_save[iorb*nt+it_orb];
@@ -158,6 +172,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
         if (idx==1){
           rho=mi*vp/qi/Bmag;
           D=1.0/(1.0+rho*nb_curl_nb[node-1]);
+          E[2]=Ephi[(node-1)*nsteps_loop+istep];
           if (basis[node-1]==1){
             E[0]=Er[(node-1)*nsteps_loop+istep];
             E[1]=Er[(node-1)*nsteps_loop+istep];
@@ -166,9 +181,12 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
             E[0]=(Er[(node-1)*nsteps_loop+istep]*Bz+Ez[(node-1)*nsteps_loop+istep]*Br)/sqrt(Br*Br+Bz*Bz);
             E[1]=(-Er[(node-1)*nsteps_loop+istep]*Br+Ez[(node-1)*nsteps_loop+istep]*Bz)/sqrt(Br*Br+Bz*Bz);
           }
-        dxdt[0]=dxdt[0]+p[k]*D*(-Bphi)*E[1]/(Bmag*Bmag);
-        dxdt[1]=dxdt[1]+p[k]*D*(+Bphi)*E[0]/(Bmag*Bmag);
-        dvpdt=dvpdt+p[k]*D*qi/mi*(E[0]*(Br/Bmag+rho*curlbr[node-1])+E[1]*(Bz/Bmag+rho*curlbz[node-1]));
+        dxdt[0]=dxdt[0]+p[k]*D*(Bz*E[2]-Bphi*E[1])/(Bmag*Bmag);
+        dxdt[1]=dxdt[1]+p[k]*D*(Bphi*E[0]-Br*E[2])/(Bmag*Bmag);
+        dxdt[2]=dxdt[2]+p[k]*D*(Br*E[1]-Bz*E[0])/(Bmag*Bmag);
+        dvpdt=dvpdt+p[k]*D*qi/mi*(E[0]*(Br/Bmag+rho*curlbr[node-1])\
+                                 +E[1]*(Bz/Bmag+rho*curlbz[node-1])\
+                                 +E[2]*(Bphi/Bmag+rho*curlbphi[node-1]));
         }//end if idx==1
         if((mu_n<f0_smu_max*f0_smu_max)&&(vp_n<f0_vp_max)&&(vp_n>=-f0_vp_max)){
           smu=sqrt(mu_n);
@@ -193,6 +211,15 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
             F_node[k]=value/sqrt(2*mu*Bmag);
             dFdvp=dFdvp+(wmu[0]*(tmp[1][0]-tmp[0][0])+wmu[1]*(tmp[1][1]-tmp[0][1]))\
                          *p[k]/sqrt(2*mu*Bmag)/(f0_dvp*sqrt(tempi/mi));
+            if (nphi>1){
+              tmp[0][0]=dFdphi[ivp*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+imu*nsteps_loop+istep];
+              tmp[0][1]=dFdphi[ivp*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+(imu+1)*nsteps_loop+istep];
+              tmp[1][0]=dFdphi[(ivp+1)*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+imu*nsteps_loop+istep];
+              tmp[1][1]=dFdphi[(ivp+1)*nnode*nmu*nsteps_loop+inode*nmu*nsteps_loop+(imu+1)*nsteps_loop+istep];
+              value=tmp[0][0]*wvp[0]*wmu[0]+tmp[0][1]*wvp[0]*wmu[1]\
+                          +tmp[1][0]*wvp[1]*wmu[0]+tmp[1][1]*wvp[1]*wmu[1];
+              dFdRphi=dFdRphi+p[k]*value/sqrt(2*mu*Bmag)/rz[(node-1)*2+0];
+            }
           }
           else{
             df0g_orb=df0g_orb+value*p[k]/sqrt(2*mu*Bmag);
@@ -201,7 +228,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
       }//end for k
       if (idx==1){
         gradF_orb(F_node,itr,num_tri,nd,rz,grad_F);
-        df0g_orb=-dxdt[0]*grad_F[0]-dxdt[1]*grad_F[1]-dvpdt*dFdvp;
+        df0g_orb=-dxdt[0]*grad_F[0]-dxdt[1]*grad_F[1]-dxdt[2]*dFdRphi-dvpdt*dFdvp;
         df0g_orb=df0g_orb*sml_dt;
       }
     }//end if itr>0
@@ -227,9 +254,10 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
   dF_orb_kernel((nblocks*nsteps_loop,),(orbit.nt,),(dF_orb_gpu,mu_orb_gpu,int(nsteps_loop),\
      steps_orb_gpu,int(orbit.nPphi),int(orbit.nH),int(orbit.nt),int(nblocks_max),int(mynorb),\
      int(idx),R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,nd_gpu,int(num_tri),B_gpu,Ti_gpu,mi,qi,\
-     nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,float(grid.f0_smu_max),\
-     float(grid.f0_vp_max),float(grid.f0_dsmu),float(grid.f0_dvp),int(grid.f0_nvp),int(grid.f0_nmu),\
-     int(grid.min_node),int(grid.max_node),df0g_gpu,sml_dt,dt_orb_gpu,rz_gpu,int(iorb1)))
+     nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,\
+     float(grid.f0_smu_max),float(grid.f0_vp_max),float(grid.f0_dsmu),float(grid.f0_dvp),\
+     int(grid.f0_nvp),int(grid.f0_nmu),int(grid.min_node),int(grid.max_node),df0g_gpu,dFdphi_gpu,\
+     sml_dt,dt_orb_gpu,rz_gpu,int(iorb1),int(grid.nphi)))
   dF_orb=cp.asnumpy(dF_orb_gpu).reshape((mynorb,orbit.nt,nsteps_loop),order='C')
   del mu_orb_gpu,R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,steps_orb_gpu,dt_orb_gpu,dF_orb_gpu
   return np.sum(dF_orb,axis=1)
@@ -237,7 +265,8 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
 def copy_data(idx,nsteps_loop,iphi):
   import cupy as cp
   import grid,orbit
-  global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
+  global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,\
+         basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,B_gpu,Ti_gpu,rz_gpu,dFdphi_gpu
   df0g_gpu=cp.array(grid.df0g[:,:,:,iphi,:],dtype=cp.float64).ravel(order='C')
   B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='C')
   Ti_gpu=cp.array(grid.tempi,dtype=cp.float64)
@@ -246,23 +275,39 @@ def copy_data(idx,nsteps_loop,iphi):
   if idx==1:
     Er_gpu=cp.array(grid.Er[iphi,:,:],dtype=cp.float64).ravel(order='C')
     Ez_gpu=cp.array(grid.Ez[iphi,:,:],dtype=cp.float64).ravel(order='C')
+    Ephi_gpu=cp.array(grid.Ephi[iphi,:,:],dtype=cp.float64).ravel(order='C')
     nb_curl_nb_gpu=cp.array(grid.nb_curl_nb,dtype=cp.float64)
     curlbr_gpu=cp.array(grid.curlbr,dtype=cp.float64)
     curlbz_gpu=cp.array(grid.curlbz,dtype=cp.float64)
+    curlbphi_gpu=cp.array(grid.curlbphi,dtype=cp.float64)
     basis_gpu=cp.array(grid.basis,dtype=cp.int32)
   else:
     Er_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
     Ez_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
+    Ephi_gpu=cp.zeros((grid.nnode*nsteps_loop,),dtype=cp.float64)
     nb_curl_nb_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
     curlbr_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
     curlbz_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
+    curlbphi_gpu=cp.zeros((grid.nnode,),dtype=cp.float64)
     basis_gpu=cp.zeros((grid.nnode,),dtype=cp.int32)
+
+  if grid.nphi>1:
+    from numpy import pi
+    dphi=2*pi/float(grid.nphi*grid.nwedge)
+    iphip1=(iphi+1)%grid.nphi
+    iphim1=(iphi-1)%grid.nphi
+    dFdphi=(grid.df0g[:,:,:,iphip1,:]-grid.df0g[:,:,:,iphim1,:])/2/dphi
+    dFdphi_gpu=cp.array(dFdphi,dtype=cp.float64).ravel(order='C')
+  else:
+    dFdphi_gpu=cp.zeros((1,),dtype=cp.float64)
   return
 
 def clear_data():
   import cupy
-  global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
-  del df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,basis_gpu,Er_gpu,Ez_gpu,B_gpu,Ti_gpu,rz_gpu
+  global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,\
+         basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,B_gpu,Ti_gpu,rz_gpu,dFdphi_gpu
+  del df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,\
+         basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,B_gpu,Ti_gpu,rz_gpu,dFdphi_gpu
   mempool = cupy.get_default_memory_pool()
   pinned_mempool = cupy.get_default_pinned_memory_pool()
   mempool.free_all_blocks()

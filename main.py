@@ -32,7 +32,7 @@ if rank==0: print('Reading grid information...',flush=True)
 grid.read(xgc,xgc_dir,Nr,Nz)
 if diag_turbulence:
   if rank==0: print('Reading additional information for turbulence flux diagnostic...',flush=True)
-  grid.additional_Bfield(xgc_dir,Nr,Nz)
+  grid.additional_Bfield(xgc,xgc_dir,Nr,Nz)
   grid.grid_deriv_init(xgc_dir)
   grid.read_dpot_orb(orbit_dir)
 

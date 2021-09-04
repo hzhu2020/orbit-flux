@@ -44,6 +44,13 @@ def read(xgc,xgc_dir,Nr,Nz):
     print('Wrong parameter xgc=',xgc)
   fid.close()
 
+  if xgc=='xgc1':
+    global nwedge
+    fname=xgc_dir+'/xgc.units.bp'
+    fid=ad.open(fname,'r')
+    nwedge=fid.read('sml_wedge_n')
+    fid.close()
+
   fname=xgc_dir+'/xgc.f0.mesh.bp'
   fid=ad.open(fname,'r')
   tempi=fid.read('f0_T_ev')
@@ -138,8 +145,8 @@ def grid_deriv_init(xgc_dir):
   fid.close()
   return
   
-def additional_Bfield(xgc_dir,Nr,Nz):
-  global basis,nb_curl_nb,curlbr,curlbz
+def additional_Bfield(xgc,xgc_dir,Nr,Nz):
+  global basis,nb_curl_nb,curlbr,curlbz,curlbphi
   fname=xgc_dir+'/xgc.grad_rz.bp'
   fid=ad.open(fname,'r')
   basis=fid.read('basis')
@@ -161,9 +168,11 @@ def additional_Bfield(xgc_dir,Nr,Nz):
   curlbr2d,curlbz2d,curlbphi2d=Curl(rlin,zlin,br,bz,bphi,Nr,Nz)
   curlbr=np.zeros((nnode),dtype=float)
   curlbz=np.zeros((nnode),dtype=float)
+  curlbphi=np.zeros((nnode),dtype=float)
   for i in range(nnode):
     curlbr[i]=TwoD(R,Z,curlbr2d,rz[i,0],rz[i,1])
     curlbz[i]=TwoD(R,Z,curlbz2d,rz[i,0],rz[i,1])
+    if xgc=='xgc1': curlbphi[i]=TwoD(R,Z,curlbphi2d,rz[i,0],rz[i,1])
 
   return
 
@@ -192,9 +201,10 @@ def read_dpot_orb(orbit_dir):
 
 def Eturb(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   from parameters import Eturb_pot0,Eturb_dpot
-  global Er,Ez
+  global Er,Ez,Ephi
   Er=np.zeros((nphi,nnode,nsteps),dtype=float)
   Ez=np.zeros((nphi,nnode,nsteps),dtype=float)
+  Ephi=np.zeros((nphi,nnode,nsteps),dtype=float)
   pot0=np.zeros((nphi,nnode),dtype=float)
   dpot=np.zeros((nphi,nnode),dtype=float)
   for istep in range(nsteps):
@@ -221,8 +231,16 @@ def Eturb(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     if grad_psitheta:
       for i in range(min_node-1,max_node):
         if (basis[i]==0)and(psi_only): Ez[:,i,istep]=0
+    if xgc=='xgc1':
+      dphi=2*np.pi/float(nphi*nwedge)
+      for iphi in range(nphi):
+        iphip1=(iphi+1)%nphi
+        iphim1=(iphi-1)%nphi
+        Ephi[iphi,min_node-1:max_node,istep]=(dpot_turb[iphip1,min_node-1:max_node]\
+                        -dpot_turb[iphim1,min_node-1:max_node])/2/dphi/rz[min_node-1:max_node,0]
   Er=-Er
   Ez=-Ez
+  if xgc=='xgc1': Ephi=-Ephi
   return
  
 def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
@@ -231,9 +249,10 @@ def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   extern "C" __global__
   void grid_deriv(double* dpot_turb,double* Er, double* Ez,int min_node,int max_node,int nnode,\
     int* nelement_r,int* nelement_z,int* eindex_r,int* eindex_z,double* value_r,double* value_z,
-    bool grad_psitheta,bool psi_only,int* basis)
+    bool grad_psitheta,bool psi_only,int* basis,double* Ephi,int nphi)
   {
     int inode,iphi,ind;
+    int iphip1,iphim1;
     inode=blockIdx.x+min_node-1;
     iphi=threadIdx.x;
     if (inode>=max_node) return;
@@ -246,12 +265,20 @@ def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
       Ez[iphi*nnode+inode]=Ez[iphi*nnode+inode]+dpot_turb[iphi*nnode+ind-1]*value_z[j*nnode+inode]; 
     }
     if ((grad_psitheta)&&(basis[inode]==0)&&(psi_only)) Ez[iphi*nnode+inode]=0;
+    if (nphi>1){
+      iphip1=iphi+1;
+      iphim1=iphi-1;
+      if (iphip1>=nphi) iphip1=iphip1-nphi;
+      if (iphim1<0) iphim1=iphim1+nphi;
+      Ephi[iphi*nnode+inode]=dpot_turb[iphip1*nnode+inode]-dpot_turb[iphim1*nnode+inode];
+    }
   }
   ''','grid_deriv') 
   from parameters import Eturb_pot0,Eturb_dpot
-  global Er,Ez
+  global Er,Ez,Ephi
   Er=np.zeros((nphi,nnode,nsteps),dtype=float)
   Ez=np.zeros((nphi,nnode,nsteps),dtype=float)
+  Ephi=np.zeros((nphi,nnode,nsteps),dtype=float)
   pot0=np.zeros((nphi,nnode),dtype=float)
   dpot=np.zeros((nphi,nnode),dtype=float)
   nelement_r_gpu=cp.array(nelement_r,dtype=cp.int32)
@@ -278,13 +305,18 @@ def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     fid.close()
     Er_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
     Ez_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
+    Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
     grid_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Er_gpu,Ez_gpu,min_node,max_node,nnode,\
           nelement_r_gpu,nelement_z_gpu,eindex_r_gpu,eindex_z_gpu,value_r_gpu,value_z_gpu,\
-          grad_psitheta,psi_only,basis_gpu))
+          grad_psitheta,psi_only,basis_gpu,Ephi_gpu,int(nphi)))
     Er[:,:,istep]=-cp.asnumpy(Er_gpu).reshape((nphi,nnode),order='C')
     Ez[:,:,istep]=-cp.asnumpy(Ez_gpu).reshape((nphi,nnode),order='C')
+    if xgc=='xgc1':
+      dphi=2*np.pi/float(nphi*nwedge)
+      Ephi[:,:,istep]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
+      for iphi in range(nphi): Ephi[iphi,:,istep]=Ephi[iphi,:,istep]/2/dphi/rz[:,0]
 
-  del Er_gpu,Ez_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
+  del Er_gpu,Ez_gpu,Ephi_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
   mempool = cp.get_default_memory_pool()
   pinned_mempool = cp.get_default_pinned_memory_pool()
   mempool.free_all_blocks()
