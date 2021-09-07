@@ -296,8 +296,10 @@ def copy_data(idx,nsteps_loop,iphi):
     dphi=2*pi/float(grid.nphi*grid.nwedge)
     iphip1=(iphi+1)%grid.nphi
     iphim1=(iphi-1)%grid.nphi
-    dFdphi=(grid.df0g[:,:,:,iphip1,:]-grid.df0g[:,:,:,iphim1,:])/2/dphi
-    dFdphi_gpu=cp.array(dFdphi,dtype=cp.float64).ravel(order='C')
+    df0g_iphip1_gpu=cp.array(grid.df0g[:,:,:,iphip1,:],dtype=cp.float64).ravel(order='C')
+    df0g_iphim1_gpu=cp.array(grid.df0g[:,:,:,iphim1,:],dtype=cp.float64).ravel(order='C')
+    dFdphi_gpu=(df0g_iphip1_gpu-df0g_iphim1_gpu)/2/dphi
+    del df0g_iphip1_gpu,df0g_iphim1_gpu
   else:
     dFdphi_gpu=cp.zeros((1,),dtype=cp.float64)
   return

@@ -80,7 +80,7 @@ def read(xgc,xgc_dir,Nr,Nz):
   return
 
 def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
-  global df0g
+  global df0g,nphi
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     if (idx==1)or(idx==5):
@@ -95,7 +95,6 @@ def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
     fid=ad.open(fname,'r')
     nmu=fid.read('mudata')
     nvp=fid.read('vpdata')
-    global nphi
     if xgc=='xgc1':
       nphi=fid.read('nphi')
     elif xgc=='xgca':
