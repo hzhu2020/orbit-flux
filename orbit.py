@@ -155,3 +155,22 @@ def partition_orbit(norb,size):
       iorb1_list[ipe+1]=iorb+1
 
     return iorb1_list,iorb2_list
+
+def simple_partition(comm,nsteps,nloops):
+  if comm.Get_rank()==0:
+    nsteps_avg=int(nsteps/nloops)
+    nsteps_last=nsteps-nsteps_avg*(nloops-1)
+    nsteps_list=np.zeros((nloops,),dtype=int)
+    nsteps_list[:]=nsteps_avg
+    if nsteps_last>nsteps_avg:
+      for iloop in range(nsteps_last-nsteps_avg): nsteps_list[iloop]=nsteps_list[iloop]+1
+    istep1=np.zeros((nloops,),dtype=int)
+    istep2=np.zeros((nloops,),dtype=int)
+    for iloop in range(nloops): istep1[iloop]=int(sum(nsteps_list[0:iloop]))
+    istep2=istep1+nsteps_list-1
+
+  else:
+    istep1,istep2=[None]*2
+  istep1=comm.bcast(istep1,root=0)
+  istep2=comm.bcast(istep2,root=0)
+  return istep1,istep2
