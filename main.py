@@ -95,10 +95,13 @@ for idx in range(1,6):
     grid.readf0(xgc,xgc_dir,source,idx,start_gstep_loop,nsteps_loop,period)
     #prepare turbulence electric field
     if idx==1:
+      if(rank==0): print('Reading turbulence electrostatic potential',flush=True)
+      grid.read_dpot_turb(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period)
+      if(rank==0): print('Calculating electric fields',flush=True)
       if use_gpu:
-        grid.Eturb_gpu(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
+        grid.Eturb_gpu(xgc,nsteps_loop,sml_grad_psitheta,False)
       else:
-        grid.Eturb(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period,sml_grad_psitheta,False)
+        grid.Eturb(xgc,nsteps_loop,sml_grad_psitheta,False)
     if use_gpu:
       dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
       for iphi in range(grid.nphi):

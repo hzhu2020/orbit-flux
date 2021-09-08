@@ -198,14 +198,12 @@ def read_dpot_orb(orbit_dir):
   fid.close()
   return
 
-def Eturb(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
+def read_dpot_turb(xgc,xgc_dir,start_gstep,nsteps,period):
   from parameters import Eturb_pot0,Eturb_dpot
-  global Er,Ez,Ephi
-  Er=np.zeros((nphi,nnode,nsteps),dtype=float)
-  Ez=np.zeros((nphi,nnode,nsteps),dtype=float)
-  Ephi=np.zeros((nphi,nnode,nsteps),dtype=float)
+  global dpot_turb
   pot0=np.zeros((nphi,nnode),dtype=float)
   dpot=np.zeros((nphi,nnode),dtype=float)
+  dpot_turb=np.zeros((nphi,nnode,nsteps),dtype=float)
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     if xgc=='xgca':
@@ -218,31 +216,42 @@ def Eturb(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     if xgc=='xgc1':#move n=0,m!=0 part to pot0
       pot0=pot0+np.tile(np.mean(dpot,axis=0),(nphi,1))
       dpot=dpot-np.tile(np.mean(dpot,axis=0),(nphi,1))
-    dpot_turb=float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-np.tile(dpot_orb,(nphi,1))
-    fid.close()
+    dpot_turb[:,:,istep]=float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-np.tile(dpot_orb,(nphi,1))
+    fid.close() 
+
+  return
+
+def Eturb(xgc,nsteps,grad_psitheta,psi_only):
+  global Er,Ez,Ephi
+  Er=np.zeros((nphi,nnode,nsteps),dtype=float)
+  Ez=np.zeros((nphi,nnode,nsteps),dtype=float)
+  Ephi=np.zeros((nphi,nnode,nsteps),dtype=float)
+  for i in range(min_node-1,max_node):
+    for j in range(nelement_r[i]):
+      ind=eindex_r[j,i]
+      Er[:,i,:]=Er[:,i,:]+dpot_turb[:,ind-1,:]*value_r[j,i]
+    for j in range(nelement_z[i]):
+      ind=eindex_z[j,i]
+      Ez[:,i,:]=Ez[:,i,:]+dpot_turb[:,ind-1,:]*value_z[j,i]
+  if grad_psitheta:
     for i in range(min_node-1,max_node):
-      for j in range(nelement_r[i]):
-        ind=eindex_r[j,i]
-        Er[:,i,istep]=Er[:,i,istep]+dpot_turb[:,ind-1]*value_r[j,i]
-      for j in range(nelement_z[i]):
-        ind=eindex_z[j,i]
-        Ez[:,i,istep]=Ez[:,i,istep]+dpot_turb[:,ind-1]*value_z[j,i]
-    if grad_psitheta:
-      for i in range(min_node-1,max_node):
-        if (basis[i]==0)and(psi_only): Ez[:,i,istep]=0
-    if xgc=='xgc1':
-      dphi=2*np.pi/float(nphi*nwedge)
-      for iphi in range(nphi):
-        iphip1=(iphi+1)%nphi
-        iphim1=(iphi-1)%nphi
-        Ephi[iphi,min_node-1:max_node,istep]=(dpot_turb[iphip1,min_node-1:max_node]\
-                        -dpot_turb[iphim1,min_node-1:max_node])/2/dphi/rz[min_node-1:max_node,0]
+      if (basis[i]==0)and(psi_only): Ez[:,i,:]=0
+  if xgc=='xgc1':
+    rz_arr=np.zeros((1,max_node-min_node+1,1))
+    rz_arr[0,:,0]=rz[min_node-1:max_node,0]
+    rz_arr=np.tile(rz_arr,(1,1,nsteps))
+    dphi=2*np.pi/float(nphi*nwedge)
+    for iphi in range(nphi):
+      iphip1=(iphi+1)%nphi
+      iphim1=(iphi-1)%nphi
+      Ephi[iphi,min_node-1:max_node,:]=(dpot_turb[iphip1,min_node-1:max_node,:]\
+                      -dpot_turb[iphim1,min_node-1:max_node,:])/2/dphi/rz_arr
   Er=-Er
   Ez=-Ez
   if xgc=='xgc1': Ephi=-Ephi
   return
  
-def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
+def Eturb_gpu(xgc,nsteps,grad_psitheta,psi_only):
   import cupy as cp
   grid_deriv_kernel=cp.RawKernel(r'''
   extern "C" __global__
@@ -273,13 +282,10 @@ def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
     }
   }
   ''','grid_deriv') 
-  from parameters import Eturb_pot0,Eturb_dpot
   global Er,Ez,Ephi
   Er=np.zeros((nphi,nnode,nsteps),dtype=float)
   Ez=np.zeros((nphi,nnode,nsteps),dtype=float)
   Ephi=np.zeros((nphi,nnode,nsteps),dtype=float)
-  pot0=np.zeros((nphi,nnode),dtype=float)
-  dpot=np.zeros((nphi,nnode),dtype=float)
   nelement_r_gpu=cp.array(nelement_r,dtype=cp.int32)
   nelement_z_gpu=cp.array(nelement_z,dtype=cp.int32)
   eindex_r_gpu=cp.array(eindex_r,dtype=cp.int32).ravel(order='C')
@@ -288,20 +294,7 @@ def Eturb_gpu(xgc,xgc_dir,start_gstep,nsteps,period,grad_psitheta,psi_only):
   value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
   basis_gpu=cp.array(basis,dtype=cp.int32)
   for istep in range(nsteps):
-    gstep=start_gstep+istep*period
-    if xgc=='xgca':
-      fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
-    elif xgc=='xgc1':
-      fname=xgc_dir+'/xgc.3d.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
-    dpot[:,:]=fid.read('dpot')
-    pot0[:,:]=fid.read('pot0')
-    if xgc=='xgc1':#move n=0,m!=0 part to pot0
-      pot0=pot0+np.tile(np.mean(dpot,axis=0),(nphi,1))
-      dpot=dpot-np.tile(np.mean(dpot,axis=0),(nphi,1))
-    dpot_turb_gpu=cp.array(float(Eturb_pot0)*pot0+float(Eturb_dpot)*dpot-np.tile(dpot_orb,(nphi,1)),\
-                           dtype=cp.float64).ravel(order='C')
-    fid.close()
+    dpot_turb_gpu=cp.array(dpot_turb[:,:,istep],dtype=cp.float64).ravel(order='C')
     Er_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
     Ez_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
     Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
