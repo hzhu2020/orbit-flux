@@ -224,15 +224,14 @@ def read_dpot_turb(xgc,xgc_dir,start_gstep,nsteps,period):
 def gyropot(use_gpu,nsteps,itask1,itask2):
   from parameters import nrho,rhomax,ngyro
   global dpot_turb_rho
-  dpot_turb_rho=np.zeros((nphi,nnode,nsteps,nrho+1))
-  dpot_turb_rho[:,:,:,0]=dpot_turb[:,:,:]
+  dpot_turb_rho=np.zeros((nphi,nnode,nsteps,nrho))
   for itask in range(itask1,itask2+1):
     istep=int(itask/nphi)
     iphi=itask-istep*nphi
     dpot_2d=griddata(rz,dpot_turb[iphi,:,istep],(R,Z),method='cubic')
     #dpot_2d=cnvt_node_to_2d(dpot_turb[iphi,:,istep])
-    for irho in range(1,nrho+1):
-      rho=float(irho)*rhomax/float(nrho)
+    for irho in range(nrho):
+      rho=float(irho+1)*rhomax/float(nrho)
       if use_gpu:
         dpot_turb_rho[iphi,:,istep,irho]=gyropot_gpu(dpot_2d,rho,ngyro)
       else:
