@@ -2,7 +2,7 @@ import numpy as np
 from time import time
 from mpi4py import MPI
 from parameters import xgc,bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
-                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,\
+                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,gyro_E,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0
 import orbit
 import grid
@@ -81,6 +81,13 @@ for idx in range(1,6):
     if idx==1:
       if(rank==0): print('Reading turbulence electrostatic potential',flush=True)
       grid.read_dpot_turb(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period)
+      if (xgc=='xgc1')and(gyro_E):
+        t1=time()
+        itasks1,itasks2=orbit.simple_partition(comm,grid.nphi*nsteps_loop,size)
+        grid.gyropot(use_gpu,nsteps_loop,itasks1[rank],itasks2[rank])
+        grid.dpot_turb_rho=comm.allreduce(grid.dpot_turb_rho,op=MPI.SUM)
+        t2=time()
+        if(rank==0): print('Gyroaveraging potential took',(t2-t1)/60.,'min',flush=True)
       if(rank==0): print('Calculating electric fields',flush=True)
       if use_gpu:
         grid.Eturb_gpu(xgc,nsteps_loop,sml_grad_psitheta,False)

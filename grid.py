@@ -221,6 +221,128 @@ def read_dpot_turb(xgc,xgc_dir,start_gstep,nsteps,period):
 
   return
 
+def gyropot(use_gpu,nsteps,itask1,itask2):
+  from parameters import nrho,rhomax,ngyro
+  global dpot_turb_rho
+  dpot_turb_rho=np.zeros((nphi,nnode,nsteps,nrho+1))
+  dpot_turb_rho[:,:,:,0]=dpot_turb[:,:,:]
+  for itask in range(itask1,itask2+1):
+    istep=int(itask/nphi)
+    iphi=itask-istep*nphi
+    dpot_2d=griddata(rz,dpot_turb[iphi,:,istep],(R,Z),method='cubic')
+    #dpot_2d=cnvt_node_to_2d(dpot_turb[iphi,:,istep])
+    for irho in range(1,nrho+1):
+      rho=float(irho)*rhomax/float(nrho)
+      if use_gpu:
+        dpot_turb_rho[iphi,:,istep,irho]=gyropot_gpu(dpot_2d,rho,ngyro)
+      else:
+        dpot_turb_rho[iphi,:,istep,irho]=gyropot_cpu(dpot_2d,rho,ngyro)
+  return 
+
+#This is slower than griddata but can be easily converted to GPU
+def cnvt_node_to_2d(fnode):
+  from parameters import Nr,Nz,sml_tri_psi_weighting
+  f2d=np.zeros((Nz,Nr),dtype=float)
+  for ir in range(Nr):
+    for iz in range(Nz):
+      r=rlin[ir]
+      z=zlin[iz]
+      itr,p=search_tr2([r,z])
+      if (sml_tri_psi_weighting)and(itr>0)and(max(p)<1.0): p=t_coeff_mod([r,z],itr,p)
+      if itr>0:
+        for i in range(3):
+          node=nd[i,itr-1]
+          f2d[iz,ir]=f2d[iz,ir]+p[i]*fnode[node]
+      else:
+        f2d[iz,ir]=np.nan
+  return f2d
+
+def gyropot_cpu(dpot2d,rho,ngyro):
+  from math import floor
+  dpot_rho=np.zeros((nnode,),dtype=float)
+  dr=rlin[1]-rlin[0]
+  dz=zlin[1]-zlin[0]
+  r0=rlin[0]
+  z0=zlin[0]
+  Nr=np.size(rlin)
+  Nz=np.size(zlin)
+  for inode in range(nnode):
+    r=rz[inode,0]
+    z=rz[inode,1]
+    tmp=0.0
+    for igyro in range(ngyro):
+      angle=2*np.pi*float(igyro)/float(ngyro)
+      r1=r+rho*np.cos(angle)
+      z1=z+rho*np.sin(angle)
+      ir1=floor((r1-r0)/dr)
+      wr=(r1-r0)/dr-ir1
+      iz1=floor((z1-z0)/dz)
+      wz=(z1-z0)/dz-iz1
+      if (ir1<0) or (ir1>Nr-2) or (iz1<0) or (iz1>Nz-2):
+        tmp=np.nan
+        dpot_rho[inode]=np.nan
+      else:
+        tmp=dpot2d[iz1,ir1]*(1-wz)*(1-wr) + dpot2d[iz1+1,ir1]*wz*(1-wr)\
+            +dpot2d[iz1,ir1+1]*(1-wz)*wr + dpot2d[iz1+1,ir1+1]*wz*wr
+        dpot_rho[inode]=dpot_rho[inode]+tmp/float(ngyro)
+
+  return dpot_rho
+
+def gyropot_gpu(dpot2d,rho,ngyro):
+  import cupy as cp
+  gyropot_kernel=cp.RawKernel(r'''
+  extern "C" __global__
+  void gyropot(double* dpot2d,double* dpot_rho,int Nz,int Nr,int ngyro,double z0,double r0,\
+                double dz,double dr,double rho,int nnode,double* rz)
+  {
+    int inode,igyro,ir1,iz1;
+    double r,z,angle,r1,z1,tmp,wr,wz;
+    inode=blockIdx.x;
+    while (inode<nnode){
+      r=rz[inode*2+0];
+      z=rz[inode*2+1];
+      dpot_rho[inode]=0.0;
+      for (igyro=0;igyro<ngyro;igyro++){
+        angle=8.*atan(1.)*double(igyro)/double(ngyro);
+        r1=r+rho*cos(angle);
+        z1=z+rho*sin(angle);
+        ir1=floor((r1-r0)/dr);
+        iz1=floor((z1-z0)/dz);
+        wr=(r1-r0)/dr-ir1;
+        wz=(z1-z0)/dz-iz1;
+        if ((ir1<0)||(ir1>Nr-2)||(iz1<0)||(iz1>Nz-2)){
+          tmp=nan("");
+        }else{
+          tmp=dpot2d[iz1*Nr+ir1]*(1-wz)*(1-wr)+dpot2d[(iz1+1)*Nr+ir1]*wz*(1-wr)\
+              +dpot2d[iz1*Nr+ir1+1]*(1-wz)*wr+dpot2d[(iz1+1)*Nr+ir1+1]*wz*wr;
+        }
+        dpot_rho[inode]+=tmp/double(ngyro);
+      }
+      inode=inode+gridDim.x;
+    }
+  }
+  ''','gyropot')
+  nblocks_max=4096
+  nblocks=min(nblocks_max,nnode)
+  dpot_rho_gpu=cp.zeros((nnode,),dtype=cp.float64)
+  dpot2d_gpu=cp.array(dpot2d,dtype=cp.float64).ravel(order='C')
+  rz_gpu=cp.array(rz,dtype=cp.float64).ravel(order='C')
+  dr=rlin[1]-rlin[0]
+  dz=zlin[1]-zlin[0]
+  r0=rlin[0]
+  z0=zlin[0]
+  Nr=np.size(rlin)
+  Nz=np.size(zlin)
+  gyropot_kernel((nblocks,),(1,),(dpot2d_gpu,dpot_rho_gpu,int(Nz),int(Nr),int(ngyro),float(z0),float(r0),\
+                      float(dz),float(dr),float(rho),int(nnode),rz_gpu))
+  dpot_rho=cp.asnumpy(dpot_rho_gpu)
+  del dpot_rho_gpu,dpot2d_gpu,rz_gpu 
+  mempool = cp.get_default_memory_pool()
+  pinned_mempool = cp.get_default_pinned_memory_pool()
+  mempool.free_all_blocks()
+  pinned_mempool.free_all_blocks()
+  return dpot_rho
+ 
 def Eturb(xgc,nsteps,grad_psitheta,psi_only):
   global Er,Ez,Ephi
   Er=np.zeros((nphi,nnode,nsteps),dtype=float)
