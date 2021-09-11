@@ -225,17 +225,22 @@ def gyropot(use_gpu,nsteps,itask1,itask2):
   from parameters import nrho,rhomax,ngyro
   global dpot_turb_rho
   dpot_turb_rho=np.zeros((nphi,nnode,nsteps,nrho))
+  istep_old=-1
+  iphi_old=-1
   for itask in range(itask1,itask2+1):
-    istep=int(itask/nphi)
-    iphi=itask-istep*nphi
-    dpot_2d=griddata(rz,dpot_turb[iphi,:,istep],(R,Z),method='cubic')
-    #dpot_2d=cnvt_node_to_2d(dpot_turb[iphi,:,istep])
-    for irho in range(nrho):
-      rho=float(irho+1)*rhomax/float(nrho)
-      if use_gpu:
-        dpot_turb_rho[iphi,:,istep,irho]=gyropot_gpu(dpot_2d,rho,ngyro)
-      else:
-        dpot_turb_rho[iphi,:,istep,irho]=gyropot_cpu(dpot_2d,rho,ngyro)
+    istep=int(itask/(nphi*nrho))
+    iphi=int((itask-istep*nphi*nrho)/nrho)
+    irho=itask-iphi*nrho-istep*nphi*nrho
+    if (istep!=istep_old)or(iphi!=iphi_old):
+      dpot_2d=griddata(rz,dpot_turb[iphi,:,istep],(R,Z),method='cubic')
+      #dpot_2d=cnvt_node_to_2d(dpot_turb[iphi,:,istep])
+      istep_old=istep
+      iphi_old=iphi
+    rho=float(irho+1)*rhomax/float(nrho)
+    if use_gpu:
+      dpot_turb_rho[iphi,:,istep,irho]=gyropot_gpu(dpot_2d,rho,ngyro)
+    else:
+      dpot_turb_rho[iphi,:,istep,irho]=gyropot_cpu(dpot_2d,rho,ngyro)
   return 
 
 #This is slower than griddata but can be easily converted to GPU

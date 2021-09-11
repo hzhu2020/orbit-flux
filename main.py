@@ -83,7 +83,8 @@ for idx in range(1,6):
       grid.read_dpot_turb(xgc,xgc_dir,start_gstep_loop,nsteps_loop,period)
       if (xgc=='xgc1')and(gyro_E):
         t1=time()
-        itasks1,itasks2=orbit.simple_partition(comm,grid.nphi*nsteps_loop,size)
+        from parameters import nrho
+        itasks1,itasks2=orbit.simple_partition(comm,grid.nphi*nsteps_loop*nrho,size)
         grid.gyropot(use_gpu,nsteps_loop,itasks1[rank],itasks2[rank])
         grid.dpot_turb_rho=comm.allreduce(grid.dpot_turb_rho,op=MPI.SUM)
         t2=time()
