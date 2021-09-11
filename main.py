@@ -88,11 +88,11 @@ for idx in range(1,6):
         grid.dpot_turb_rho=comm.allreduce(grid.dpot_turb_rho,op=MPI.SUM)
         t2=time()
         if(rank==0): print('Gyroaveraging potential took',(t2-t1)/60.,'min',flush=True)
-      if(rank==0): print('Calculating electric fields',flush=True)
       if use_gpu:
-        grid.Eturb_gpu(xgc,nsteps_loop,sml_grad_psitheta,False)
+        grid.Eturb_gpu(xgc,gyro_E,nsteps_loop,sml_grad_psitheta,False)
       else:
-        grid.Eturb(xgc,nsteps_loop,sml_grad_psitheta,False)
+        grid.Eturb(xgc,gyro_E,nsteps_loop,sml_grad_psitheta,False)
+      if(rank==0): print('Finished calculating electric fields',flush=True)
     if use_gpu:
       dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
       for iphi in range(grid.nphi):
