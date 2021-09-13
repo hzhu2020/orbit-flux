@@ -11,14 +11,12 @@ def read(xgc,xgc_dir,Nr,Nz):
   fid=ad.open(fname,'r')
   if xgc=='xgca':
     rz=fid.read('/coordinates/values')
-    guess_min=fid.read('grid%guess_min')
-    inv_guess_d=fid.read('grid%inv_guess_d')
   elif xgc=='xgc1':
     rz=fid.read('rz')
-    guess_min=fid.read('guess_min')
-    inv_guess_d=fid.read('inv_guess_d')
   else:
     print('Wrong parameter xgc=',xgc)
+  guess_min=fid.read('guess_min')
+  inv_guess_d=fid.read('inv_guess_d')
   psi_rz=fid.read('psi')
   nnode=np.size(psi_rz)
   guess_table=fid.read('guess_table')
