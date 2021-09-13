@@ -270,7 +270,7 @@ def gyropot_cpu(dpot2d,rho,ngyro):
   z0=zlin[0]
   Nr=np.size(rlin)
   Nz=np.size(zlin)
-  for inode in range(nnode):
+  for inode in range(deriv_min_node-1,deriv_max_node):
     r=rz[inode,0]
     z=rz[inode,1]
     tmp=0.0
@@ -297,12 +297,12 @@ def gyropot_gpu(dpot2d,rho,ngyro):
   gyropot_kernel=cp.RawKernel(r'''
   extern "C" __global__
   void gyropot(double* dpot2d,double* dpot_rho,int Nz,int Nr,int ngyro,double z0,double r0,\
-                double dz,double dr,double rho,int nnode,double* rz)
+                double dz,double dr,double rho,int min_node,int max_node,double* rz)
   {
     int inode,igyro,ir1,iz1;
     double r,z,angle,r1,z1,tmp,wr,wz;
-    inode=blockIdx.x;
-    while (inode<nnode){
+    inode=blockIdx.x+min_node-1;
+    while (inode<max_node){
       r=rz[inode*2+0];
       z=rz[inode*2+1];
       dpot_rho[inode]=0.0;
@@ -327,7 +327,8 @@ def gyropot_gpu(dpot2d,rho,ngyro):
   }
   ''','gyropot')
   nblocks_max=4096
-  nblocks=min(nblocks_max,nnode)
+  nnode_deriv=deriv_max_node-deriv_min_node+1
+  nblocks=min(nblocks_max,nnode_deriv)
   dpot_rho_gpu=cp.zeros((nnode,),dtype=cp.float64)
   dpot2d_gpu=cp.array(dpot2d,dtype=cp.float64).ravel(order='C')
   rz_gpu=cp.array(rz,dtype=cp.float64).ravel(order='C')
@@ -338,7 +339,7 @@ def gyropot_gpu(dpot2d,rho,ngyro):
   Nr=np.size(rlin)
   Nz=np.size(zlin)
   gyropot_kernel((nblocks,),(1,),(dpot2d_gpu,dpot_rho_gpu,int(Nz),int(Nr),int(ngyro),float(z0),float(r0),\
-                      float(dz),float(dr),float(rho),int(nnode),rz_gpu))
+                      float(dz),float(dr),float(rho),int(deriv_min_node),int(deriv_max_node),rz_gpu))
   dpot_rho=cp.asnumpy(dpot_rho_gpu)
   del dpot_rho_gpu,dpot2d_gpu,rz_gpu 
   mempool = cp.get_default_memory_pool()
@@ -770,4 +771,19 @@ def node_range_gpu(tri_psi):
   pinned_mempool = cp.get_default_pinned_memory_pool()
   mempool.free_all_blocks()
   pinned_mempool.free_all_blocks()
+  return
+
+def deriv_node_range():
+  global deriv_min_node,deriv_max_node
+  deriv_min_node=nnode
+  deriv_max_node=0
+  for i in range(min_node-1,max_node):
+    for j in range(nelement_r[i]):
+      ind=eindex_r[j,i]
+      if ind>deriv_max_node: deriv_max_node=ind
+      if ind<deriv_min_node: deriv_min_node=ind
+    for j in range(nelement_z[i]):
+      ind=eindex_z[j,i]
+      if ind>deriv_max_node: deriv_max_node=ind
+      if ind<deriv_min_node: deriv_min_node=ind
   return

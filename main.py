@@ -42,6 +42,11 @@ if use_gpu:
   grid.node_range_gpu(sml_tri_psi_weighting)
 else:
   grid.node_range(sml_tri_psi_weighting)
+#also determine the range of nodes needed for spatial derivative
+if diag_turbulence:
+  grid.deriv_node_range()
+  grid.deriv_min_node=comm.allreduce(grid.deriv_min_node,op=MPI.MIN)
+  grid.deriv_max_node=comm.allreduce(grid.deriv_max_node,op=MPI.MAX)
 t_end=time()
 if rank==0: print('Preparing orbit locations took',(t_end-t_beg)/60.,'minutes',flush=True)
 #set number of steps for each loop to avoid too large 
