@@ -2,10 +2,14 @@ def dF_orb_main(iorb,nsteps_loop,idx):
   import orbit,grid
   import numpy as np
   from math import floor
-  from parameters import mi,qi,sml_dt
-  if grid.nrho>0:
+  from parameters import mi,qi,sml_dt,xgc,gyro_E
+  if (idx==1)and(xgc=='xgc1')and(gyro_E):
+    from parameters import nrho
+  else:
+    nrho=0
+  if nrho>0:
     from parameters import rhomax
-    drho=rhomax/float(grid.nrho)
+    drho=rhomax/float(nrho)
   p=np.zeros((3,),dtype=float)
   tmp=np.zeros((2,2,grid.nphi,nsteps_loop),dtype=float)
   imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
@@ -40,10 +44,10 @@ def dF_orb_main(iorb,nsteps_loop,idx):
         if idx==1:
           rho=mi*vp/qi/B
           D=1.0/(1.0+rho*grid.nb_curl_nb[node-1])
-          if grid.nrho>0:
+          if nrho>0:
             rho_perp=min(rhomax,np.sqrt(2*mi*mu/B)/qi)
             rhon=rho_perp/(drho+1E-10)#avoid division by zero
-            irho0=min(floor(rhon),grid.nrho-1)
+            irho0=min(floor(rhon),nrho-1)
             irho1=irho0+1
             wrho[1]=rhon-float(irho0)
             wrho[0]=1.0-wrho[1]
@@ -118,7 +122,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
   import numpy as np
   import cupy as cp
   from math import floor
-  from parameters import mi,qi,sml_dt
+  from parameters import mi,qi,sml_dt,xgc,gyro_E
   dF_orb_kernel=cp.RawKernel(r'''
   extern "C" __device__
   void gradF_orb(double* F,int itr,int num_tri,int* nd,double* rz,double* dFdx)
@@ -159,7 +163,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
       iorb=iorb+nblocks_max;
       continue;
     }
-    drho=rhomax/double(nrho);
+    if (nrho>0) drho=rhomax/double(nrho);
     imu_orb=(iorb+iorb1-1)/(nPphi*nH);
     mu=mu_orb[imu_orb];
     df0g_orb=0.; 
@@ -297,7 +301,11 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
   dt_orb_gpu=cp.array(orbit.dt_orb[iorb1-1:iorb2],dtype=cp.float64)
   num_tri=np.shape(grid.nd)[1]
   dF_orb_gpu=cp.zeros((mynorb*nsteps_loop*orbit.nt,),dtype=cp.float64)
-  if grid.nrho>0:
+  if (idx==1)and(xgc=='xgc1')and(gyro_E):
+    from parameters import nrho
+  else:
+    nrho=0
+  if nrho>0:
     from parameters import rhomax
   else:
     rhomax=0.0
@@ -307,7 +315,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
      nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,\
      float(grid.f0_smu_max),float(grid.f0_vp_max),float(grid.f0_dsmu),float(grid.f0_dvp),\
      int(grid.f0_nvp),int(grid.f0_nmu),int(grid.min_node),int(grid.max_node),df0g_gpu,dFdphi_gpu,\
-     sml_dt,dt_orb_gpu,rz_gpu,int(iorb1),int(grid.nphi),int(grid.nrho),float(rhomax)))
+     sml_dt,dt_orb_gpu,rz_gpu,int(iorb1),int(grid.nphi),int(nrho),float(rhomax)))
   dF_orb=cp.asnumpy(dF_orb_gpu).reshape((mynorb,orbit.nt,nsteps_loop),order='C')
   del mu_orb_gpu,R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,steps_orb_gpu,dt_orb_gpu,dF_orb_gpu
   return np.sum(dF_orb,axis=1)
