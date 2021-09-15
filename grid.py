@@ -445,10 +445,9 @@ def Eturb_gpu(xgc,gyro_E,nsteps,grad_psitheta,psi_only):
   extern "C" __global__
   void grid_deriv(double* dpot_turb,double* Er, double* Ez,int min_node,int max_node,int nnode,\
     int* nelement_r,int* nelement_z,int* eindex_r,int* eindex_z,double* value_r,double* value_z,
-    bool grad_psitheta,bool psi_only,int* basis,double* Ephi,int nphi)
+    bool grad_psitheta,bool psi_only,int* basis)
   {
     int inode,iphi,ind;
-    int iphip1,iphim1;
     inode=blockIdx.x+min_node-1;
     iphi=threadIdx.x;
     if (inode>=max_node) return;
@@ -461,15 +460,24 @@ def Eturb_gpu(xgc,gyro_E,nsteps,grad_psitheta,psi_only):
       Ez[iphi*nnode+inode]=Ez[iphi*nnode+inode]+dpot_turb[iphi*nnode+ind-1]*value_z[j*nnode+inode]; 
     }
     if ((grad_psitheta)&&(basis[inode]==0)&&(psi_only)) Ez[iphi*nnode+inode]=0;
-    if (nphi>1){
-      iphip1=iphi+1;
-      iphim1=iphi-1;
-      if (iphip1>=nphi) iphip1=iphip1-nphi;
-      if (iphim1<0) iphim1=iphim1+nphi;
-      Ephi[iphi*nnode+inode]=dpot_turb[iphip1*nnode+inode]-dpot_turb[iphim1*nnode+inode];
-    }
   }
-  ''','grid_deriv') 
+  ''','grid_deriv')
+  tor_deriv_kernel=cp.RawKernel(r'''
+  extern "C" __global__
+  void tor_deriv(double* dpot_turb,double* Ephi,double dphi,int min_node,int max_node,int nnode,\
+       double* r,int nphi)
+  {
+    int inode,iphi,iphip1,iphim1;
+    inode=blockIdx.x+min_node-1;
+    iphi=threadIdx.x;
+    if (inode>=max_node) return;
+    iphip1=iphi+1;
+    iphim1=iphi-1;
+    if (iphip1>=nphi) iphip1=iphip1-nphi;
+    if (iphim1<0) iphim1=iphim1+nphi;
+    Ephi[iphi*nnode+inode]=(dpot_turb[iphip1*nnode+inode]-dpot_turb[iphim1*nnode+inode])/(2.*dphi*r[inode]);
+  }
+  ''','tor_deriv')
   global Er,Ez,Ephi,nrho
   if (xgc=='xgc1')and(gyro_E):
     from parameters import nrho
@@ -485,6 +493,9 @@ def Eturb_gpu(xgc,gyro_E,nsteps,grad_psitheta,psi_only):
   value_r_gpu=cp.array(value_r,dtype=cp.float64).ravel(order='C')
   value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
   basis_gpu=cp.array(basis,dtype=cp.int32)
+  if xgc=='xgc1':
+    dphi=2*np.pi/float(nphi*nwedge)
+    r_gpu=cp.array(rz[:,0],dtype=cp.float64)
   for istep in range(nsteps):
     for irho in range(nrho+1):
       if irho==0:
@@ -493,16 +504,16 @@ def Eturb_gpu(xgc,gyro_E,nsteps,grad_psitheta,psi_only):
         dpot_turb_gpu=cp.array(dpot_turb_rho[:,:,istep,irho-1],dtype=cp.float64).ravel(order='C')
       Er_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
       Ez_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
-      Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
       grid_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Er_gpu,Ez_gpu,min_node,max_node,nnode,\
             nelement_r_gpu,nelement_z_gpu,eindex_r_gpu,eindex_z_gpu,value_r_gpu,value_z_gpu,\
-            grad_psitheta,psi_only,basis_gpu,Ephi_gpu,int(nphi)))
+            grad_psitheta,psi_only,basis_gpu))
       Er[:,:,istep,irho]=-cp.asnumpy(Er_gpu).reshape((nphi,nnode),order='C')
       Ez[:,:,istep,irho]=-cp.asnumpy(Ez_gpu).reshape((nphi,nnode),order='C')
       if xgc=='xgc1':
-        dphi=2*np.pi/float(nphi*nwedge)
+        Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
+        tor_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Ephi_gpu,float(dphi),min_node,max_node,\
+                          nnode,r_gpu,int(nphi)))
         Ephi[:,:,istep,irho]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
-        for iphi in range(nphi): Ephi[iphi,:,istep,irho]=Ephi[iphi,:,istep,irho]/2/dphi/rz[:,0]
 
   del Er_gpu,Ez_gpu,Ephi_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
   mempool = cp.get_default_memory_pool()
