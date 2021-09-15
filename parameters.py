@@ -1,6 +1,7 @@
 diag_turbulence=True
 Eturb_pot0=True#include pot0 when calculating Eturb
 Eturb_dpot=True#include dpot when calculating Eturb
+use_ff=True#calculate \varphi derivatives from parallel derivatives
 gyro_E=True#whether to gyroaverage the potential (xgc1 only)
 ngyro=32#number of points for gyroaveraing
 rhomax=0.012#max of gyroradius (m)

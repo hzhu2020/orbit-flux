@@ -2,7 +2,7 @@ import numpy as np
 from time import time
 from mpi4py import MPI
 from parameters import xgc,bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
-                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,gyro_E,\
+                       sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,gyro_E,use_ff,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0
 import orbit
 import grid
@@ -29,7 +29,7 @@ else:
   orbit.read(orbit_dir,comm)
 #determine the range of nodes needed
 if rank==0: print('Reading grid information...',flush=True)
-grid.read(xgc,xgc_dir,Nr,Nz)
+grid.read(xgc,use_ff,xgc_dir,Nr,Nz)
 if diag_turbulence:
   if rank==0: print('Reading additional information for turbulence flux diagnostic...',flush=True)
   grid.additional_Bfield(xgc,xgc_dir,Nr,Nz)
@@ -44,7 +44,7 @@ else:
   grid.node_range(sml_tri_psi_weighting)
 #also determine the range of nodes needed for spatial derivative
 if diag_turbulence:
-  grid.deriv_node_range()
+  grid.deriv_node_range(xgc,use_ff)
   grid.deriv_min_node=comm.allreduce(grid.deriv_min_node,op=MPI.MIN)
   grid.deriv_max_node=comm.allreduce(grid.deriv_max_node,op=MPI.MAX)
 t_end=time()
@@ -97,7 +97,7 @@ for idx in range(1,6):
       if use_gpu:
         grid.Eturb_gpu(xgc,gyro_E,nsteps_loop,sml_grad_psitheta,False)
       else:
-        grid.Eturb(xgc,gyro_E,nsteps_loop,sml_grad_psitheta,False)
+        grid.Eturb(xgc,use_ff,gyro_E,nsteps_loop,sml_grad_psitheta,False)
       if(rank==0): print('Finished calculating electric fields',flush=True)
     if use_gpu:
       dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)

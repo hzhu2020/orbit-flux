@@ -3,7 +3,7 @@ import numpy as np
 from math import floor
 from scipy.interpolate import griddata
 
-def read(xgc,xgc_dir,Nr,Nz):
+def read(xgc,use_ff,xgc_dir,Nr,Nz):
   global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
@@ -13,6 +13,11 @@ def read(xgc,xgc_dir,Nr,Nz):
     rz=fid.read('/coordinates/values')
   elif xgc=='xgc1':
     rz=fid.read('rz')
+    if use_ff:
+      global ff_1dp_tr,ff_1dp_p,ff_1dp_dx
+      ff_1dp_tr=fid.read('ff_1dp_tr')
+      ff_1dp_p=fid.read('ff_1dp_p')
+      ff_1dp_dx=fid.read('one_per_dx')
   else:
     print('Wrong parameter xgc=',xgc)
   guess_min=fid.read('guess_min')
@@ -68,6 +73,10 @@ def read(xgc,xgc_dir,Nr,Nz):
   guess_xtable=np.transpose(guess_xtable)
   guess_count=np.transpose(guess_count)
   nd=np.transpose(nd)
+  if (xgc=='xgc1')and(use_ff):
+    ff_1dp_tr=np.transpose(ff_1dp_tr)
+    ff_1dp_p=np.transpose(ff_1dp_p)
+    ff_1dp_dx=np.transpose(ff_1dp_dx)
 
   rmesh=rz[:,0]
   zmesh=rz[:,1]
@@ -346,7 +355,7 @@ def gyropot_gpu(dpot2d,rho,ngyro):
   pinned_mempool.free_all_blocks()
   return dpot_rho
  
-def Eturb(xgc,gyro_E,nsteps,grad_psitheta,psi_only):
+def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
   global Er,Ez,Ephi,nrho
   if (xgc=='xgc1')and(gyro_E):
     from parameters import nrho
@@ -367,7 +376,50 @@ def Eturb(xgc,gyro_E,nsteps,grad_psitheta,psi_only):
   if grad_psitheta:
     for i in range(min_node-1,max_node):
       if (basis[i]==0)and(psi_only): Ez[:,i,:,:]=0
-  if xgc=='xgc1':
+  if (xgc=='xgc1')and(use_ff):
+    Epara=np.zeros((nsteps,nrho+1),dtype=float)
+    for i in range(min_node-1,max_node):
+      Br=B[i,0]
+      Bz=B[i,1]
+      Bphi=B[i,2]
+      Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
+      Bpol=np.sqrt(Br**2+Bz**2)
+      if Bphi>0:
+        sgn=+1
+      else:
+        sgn=-1
+      itr_l=ff_1dp_tr[i,0]
+      itr_r=ff_1dp_tr[i,1]
+      if (itr_l<0)or(itr_r<0): continue
+      p_l=ff_1dp_p[:,i,0]
+      p_r=ff_1dp_p[:,i,1]
+      dl_l=ff_1dp_dx[i,0]
+      dl_r=ff_1dp_dx[i,1]
+      dl_tot=dl_l+dl_r
+      pot_l=np.zeros((nphi,nsteps,nrho+1),dtype=float)
+      pot_r=np.zeros((nphi,nsteps,nrho+1),dtype=float)
+      pot_m=np.zeros((nphi,nsteps,nrho+1),dtype=float)
+      pot_m[:,:,0]=dpot_turb[:,i,:]
+      if nrho>0: pot_m[:,:,1:nrho+1]=dpot_turb_rho[:,i,:,:]
+      for k in range(3):
+        node_l=nd[k,itr_l-1]
+        node_r=nd[k,itr_r-1]
+        pot_l[:,:,0]=pot_l[:,:,0]+p_l[k]*dpot_turb[:,node_l-1,:]
+        if nrho>0: pot_l[:,:,1:nrho+1]=pot_l[:,:,1:nrho+1]+p_l[k]*dpot_turb_rho[:,node_l-1,:,:]
+        pot_r[:,:,0]=pot_r[:,:,0]+p_r[k]*dpot_turb[:,node_r-1,:]
+        if nrho>0: pot_r[:,:,1:nrho+1]=pot_r[:,:,1:nrho+1]+p_r[k]*dpot_turb_rho[:,node_r-1,:,:]
+      for iphi in range(nphi):
+        iphip1=(iphi+1)%nphi
+        iphim1=(iphi-1)%nphi
+        Epara[:,:]=sgn*(-dl_r/(dl_l*dl_tot)*pot_l[iphim1,:,:]\
+                   +(dl_r-dl_l)/(dl_l*dl_r)*pot_m[iphi,:,:]\
+                   +dl_l/(dl_r*dl_tot)*pot_r[iphip1,:,:])
+        if basis[i]==1:
+          Ephi[iphi,i,:,:]=(Epara[:,:]*Bmag-Er[iphi,i,:,:]*Br-Ez[iphi,i,:,:]*Bz)/Bphi
+        else:
+          Ephi[iphi,i,:,:]=(Epara[:,:]*Bmag-Ez[iphi,i,:,:]*Bpol)/Bphi
+
+  if (xgc=='xgc1')and(not use_ff):
     rz_arr=np.zeros((1,max_node-min_node+1,1))
     rz_arr[0,:,0]=rz[min_node-1:max_node,0]
     rz_arr=np.tile(rz_arr,(1,1,nsteps))
@@ -771,7 +823,7 @@ def node_range_gpu(tri_psi):
   pinned_mempool.free_all_blocks()
   return
 
-def deriv_node_range():
+def deriv_node_range(xgc,use_ff):
   global deriv_min_node,deriv_max_node
   deriv_min_node=nnode
   deriv_max_node=0
@@ -784,4 +836,11 @@ def deriv_node_range():
       ind=eindex_z[j,i]
       if ind>deriv_max_node: deriv_max_node=ind
       if ind<deriv_min_node: deriv_min_node=ind
+    if (xgc=='xgc1')and(use_ff):
+      for idir in range(2):
+        itr=ff_1dp_tr[i,idir]
+        for k in range(3):
+          node=nd[k,itr-1]
+          if (node>deriv_max_node): deriv_max_node=node
+          if (node<deriv_min_node): deriv_min_node=node
   return
