@@ -2,7 +2,7 @@ def dF_orb_main(iorb,nsteps_loop,idx):
   import orbit,grid
   import numpy as np
   from math import floor
-  from parameters import mi,qi,sml_dt,xgc,gyro_E
+  from parameters import mi,qi,sml_dt,xgc,gyro_E,use_ff
   if (idx==1)and(xgc=='xgc1')and(gyro_E):
     from parameters import nrho
   else:
@@ -25,6 +25,11 @@ def dF_orb_main(iorb,nsteps_loop,idx):
       F_node=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
       dFdvp=np.zeros((grid.nphi,nsteps_loop),dtype=float)
       dFdRphi=np.zeros((grid.nphi,nsteps_loop),dtype=float)
+      if (xgc=='xgc1')and(use_ff):
+        Br_l=0.
+        Bz_l=0.
+        Bphi_l=0.
+        gradParF=np.zeros((grid.nphi,nsteps_loop),dtype=float)
 
     r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
     z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
@@ -96,7 +101,12 @@ def dF_orb_main(iorb,nsteps_loop,idx):
             F_node[:,i,:]=value[:,:]/np.sqrt(2*mu*B)
             dFdvp[:,:]=dFdvp[:,:]+(wmu[0]*(tmp[1,0,:,:]-tmp[0,0,:,:])+wmu[1]*(tmp[1,1,:,:]-tmp[0,1,:,:]))\
                    *p[i]/np.sqrt(2*mu*B)/(grid.f0_dvp*np.sqrt(tempi/mi))
-            if grid.nphi>1:
+            if (xgc=='xgc1')and(use_ff):
+              Br_l=Br_l+p[i]*Br
+              Bz_l=Bz_l+p[i]*Bz
+              Bphi_l=Bphi_l+p[i]*Bphi
+              gradParF[:,:]=gradParF[:,:]+p[i]*grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp)
+            if (xgc=='xgc1')and(not use_ff):
               dphi=2*np.pi/float(grid.nphi*grid.nwedge)
               for iphi in range(grid.nphi):
                 iphip1=(iphi+1)%grid.nphi
@@ -108,6 +118,9 @@ def dF_orb_main(iorb,nsteps_loop,idx):
       #end for i
       if idx==1:
         grad_F=grid.gradF_orb(F_node,itr,nsteps_loop)
+        if (xgc=='xgc1')and(use_ff):
+          B_l=np.sqrt(Br_l**2+Bz_l**2+Bphi_l**2)
+          if B_l>1E-4: dFdRphi[:,:]=(gradParF[:,:]*B_l-grad_F[:,0,:]*Br_l-grad_F[:,1,:]*Bz_l)/Bphi_l
         df0g_orb[:,:]=-dxdt[:,0,:]*grad_F[:,0,:]-dxdt[:,1,:]*grad_F[:,1,:]\
                       -dxdt[:,2,:]*dFdRphi[:,:]-dvpdt[:,:]*dFdvp[:,:]
         df0g_orb[:,:]=df0g_orb[:,:]*sml_dt

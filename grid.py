@@ -88,6 +88,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
 
 def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
   global df0g,nphi
+  from parameters import use_ff
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     if (idx==1)or(idx==5):
@@ -127,6 +128,22 @@ def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
     if istep==0: df0g=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
     df0g[:,:,:,:,istep]=tmp
+    #read additional data if we need field-line following F_i
+    if (idx==1)and(xgc=='xgc1')and(use_ff):
+      global df0g_high,df0g_low
+      if min_node_ff<min_node:
+        n_node=min_node-min_node_ff
+        tmp=fid.read('i_f',start=[0,0,min_node_ff-1,0],count=[nphi,nmu,n_node,nvp])
+        tmp=np.transpose(tmp)
+        if istep==0: df0g_low=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
+        df0g_low[:,:,:,:,istep]=tmp
+      if max_node_ff>max_node:
+        n_node=max_node_ff-max_node
+        tmp=fid.read('i_f',start=[0,0,max_node,0],count=[nphi,nmu,n_node,nvp])
+        tmp=np.transpose(tmp)
+        if istep==0: df0g_high=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
+        df0g_high[:,:,:,:,istep]=tmp
+    #end for istep
     fid.close()
   #end for istep
   return
@@ -701,6 +718,56 @@ def gradF_orb(F,itr,nsteps):
   dFdx[:,1,:]=dFdx[:,1,:]/xsj
   return dFdx
 
+def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
+  gradParF=np.zeros((nphi,nsteps))
+  if B[node-1,0]>0:
+    sgn=+1
+  else:
+    sgn=-1
+  itr_l=ff_1dp_tr[node-1,0]
+  itr_r=ff_1dp_tr[node-1,1]
+  if (itr_l<0)or(itr_r<0): return
+  p_l=ff_1dp_p[:,node-1,0]
+  p_r=ff_1dp_p[:,node-1,1]
+  dl_l=ff_1dp_dx[node-1,0]
+  dl_r=ff_1dp_dx[node-1,1]
+  dl_tot=dl_l+dl_r
+  F_l=np.zeros((2,2,nphi,nsteps),dtype=float)
+  F_r=np.zeros((2,2,nphi,nsteps),dtype=float)
+  F_m=np.zeros((2,2,nphi,nsteps),dtype=float)
+  F_m[:,:,:,:]=df0g[ivp:ivp+2,node-min_node,imu:imu+2,:,:]
+  for k in range(3):
+    node_l=nd[k,itr_l-1]
+    node_r=nd[k,itr_r-1]
+    if node_l<min_node:
+      F_l[:,:,:,:]=F_l[:,:,:,:]+p_l[k]*df0g_low[ivp:ivp+2,node_l-min_node_ff,imu:imu+2,:,:]
+    elif node_l>max_node:
+      F_l[:,:,:,:]=F_l[:,:,:,:]+p_l[k]*df0g_high[ivp:ivp+2,node_l-max_node-1,imu:imu+2,:,:]
+    else:
+      F_l[:,:,:,:]=F_l[:,:,:,:]+p_l[k]*df0g[ivp:ivp+2,node_l-min_node,imu:imu+2,:,:]
+
+    if node_r<min_node:
+      F_r[:,:,:,:]=F_r[:,:,:,:]+p_r[k]*df0g_low[ivp:ivp+2,node_r-min_node_ff,imu:imu+2,:,:]
+    elif node_r>max_node:
+      F_r[:,:,:,:]=F_r[:,:,:,:]+p_r[k]*df0g_high[ivp:ivp+2,node_r-max_node-1,imu:imu+2,:,:]
+    else:
+      F_r[:,:,:,:]=F_r[:,:,:,:]+p_r[k]*df0g[ivp:ivp+2,node_r-min_node,imu:imu+2,:,:]
+
+  value_m=F_m[0,0,:,:]*wvp[0]*wmu[0]+F_m[0,1,:,:]*wvp[0]*wmu[1]\
+         +F_m[1,0,:,:]*wvp[1]*wmu[0]+F_m[1,1,:,:]*wvp[1]*wmu[1]
+  value_l=F_l[0,0,:,:]*wvp[0]*wmu[0]+F_l[0,1,:,:]*wvp[0]*wmu[1]\
+         +F_l[1,0,:,:]*wvp[1]*wmu[0]+F_l[1,1,:,:]*wvp[1]*wmu[1]
+  value_r=F_r[0,0,:,:]*wvp[0]*wmu[0]+F_r[0,1,:,:]*wvp[0]*wmu[1]\
+         +F_r[1,0,:,:]*wvp[1]*wmu[0]+F_r[1,1,:,:]*wvp[1]*wmu[1]
+
+  for iphi in range(nphi):
+    iphip1=(iphi+1)%nphi
+    iphim1=(iphi-1)%nphi
+    gradParF[iphi,:]=sgn*(-dl_r/(dl_l*dl_tot)*value_l[iphim1,:]\
+                    +(dl_r-dl_l)/(dl_l*dl_r)*value_m[iphi,:]\
+                    +dl_l/(dl_r*dl_tot)*value_r[iphip1,:])
+  return gradParF
+
 def node_range(tri_psi):
   from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
   global min_node,max_node,itr_save,p_save
@@ -899,6 +966,10 @@ def deriv_node_range(xgc,use_ff):
   global deriv_min_node,deriv_max_node
   deriv_min_node=nnode
   deriv_max_node=0
+  if (xgc=='xgc1')and(use_ff):
+    global min_node_ff,max_node_ff
+    min_node_ff=nnode
+    max_node_ff=0
   for i in range(min_node-1,max_node):
     for j in range(nelement_r[i]):
       ind=eindex_r[j,i]
@@ -915,4 +986,6 @@ def deriv_node_range(xgc,use_ff):
           node=nd[k,itr-1]
           if (node>deriv_max_node): deriv_max_node=node
           if (node<deriv_min_node): deriv_min_node=node
+          if (node>max_node_ff): max_node_ff=node
+          if (node<min_node_ff): min_node_ff=node
   return
