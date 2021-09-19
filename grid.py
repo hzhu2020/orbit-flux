@@ -720,7 +720,7 @@ def gradF_orb(F,itr,nsteps):
 
 def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
   gradParF=np.zeros((nphi,nsteps))
-  if B[node-1,0]>0:
+  if B[node-1,2]>0:
     sgn=+1
   else:
     sgn=-1
