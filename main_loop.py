@@ -105,7 +105,7 @@ def dF_orb_main(iorb,nsteps_loop,idx):
               Br_l=Br_l+p[i]*Br
               Bz_l=Bz_l+p[i]*Bz
               Bphi_l=Bphi_l+p[i]*Bphi
-              gradParF[:,:]=gradParF[:,:]+p[i]*grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp)
+              gradParF[:,:]=gradParF[:,:]+p[i]*grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp)/np.sqrt(2*mu*B)
             if (xgc=='xgc1')and(not use_ff):
               dphi=2*np.pi/float(grid.nphi*grid.nwedge)
               for iphi in range(grid.nphi):
