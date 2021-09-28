@@ -93,9 +93,10 @@ def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
     gstep=start_gstep+istep*period
     if (idx==1)or(idx==5):
       if xgc=='xgca':
-        fname=xgc_dir+'/xgc.f0.'+'{:0>5d}'.format(gstep)+'.bp'
-      elif xgc=='xgc1':
         fname=xgc_dir+'/xgc.orbit.f0.'+'{:0>5d}'.format(gstep)+'.bp'
+      elif xgc=='xgc1':
+        if idx==1: fname=xgc_dir+'/xgc.orbit.f0.'+'{:0>5d}'.format(gstep)+'.bp'
+        if idx==5: fname=xgc_dir+'/xgc.orbit.avgf0.'+'{:0>5d}'.format(gstep)+'.bp'
       else:
         print('Wrong parameter xgc=',xgc)
     else:
@@ -593,7 +594,8 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
                           nnode,r_gpu,int(nphi)))
         Ephi[:,:,istep,irho]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
 
-  del Er_gpu,Ez_gpu,Ephi_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
+  del Er_gpu,Ez_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
+  if xgc=='xgc1': del Ephi_gpu
   if (xgc=='xgc1')and(use_ff): del B_gpu,nd_gpu,ff_1dp_tr_gpu,ff_1dp_p_gpu,ff_1dp_dx_gpu
   mempool = cp.get_default_memory_pool()
   pinned_mempool = cp.get_default_pinned_memory_pool()
