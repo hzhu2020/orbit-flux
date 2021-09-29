@@ -169,7 +169,7 @@ def grid_deriv_init(xgc_dir):
   fid.close()
   return
   
-def additional_Bfield(xgc,xgc_dir,Nr,Nz):
+def additional_Bfield(xgc,xgc_dir,Nr,Nz,itask1,itask2,comm,summation):
   global basis,nb_curl_nb,curlbr,curlbz,curlbphi
   fname=xgc_dir+'/xgc.grad_rz.bp'
   fid=ad.open(fname,'r')
@@ -181,9 +181,15 @@ def additional_Bfield(xgc,xgc_dir,Nr,Nz):
   nb_curl_nb=fid.read('nb_curl_nb')
   fid.close()
   
-  Br=griddata(rz,B[:,0],(R,Z),method='cubic')
-  Bz=griddata(rz,B[:,1],(R,Z),method='cubic')
-  Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
+  Br=np.zeros((Nz,Nr),dtype=float)
+  Bz=np.zeros((Nz,Nr),dtype=float)
+  Bphi=np.zeros((Nz,Nr),dtype=float)
+  if (itask1<=0)and(0<=itask2): Br=griddata(rz,B[:,0],(R,Z),method='cubic')
+  if (itask1<=1)and(1<=itask2): Bz=griddata(rz,B[:,1],(R,Z),method='cubic')
+  if (itask1<=2)and(2<=itask2): Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
+  Br=comm.allreduce(Br,op=summation)
+  Bz=comm.allreduce(Bz,op=summation)
+  Bphi=comm.allreduce(Bphi,op=summation)
   Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
   
   br=Br/Bmag
