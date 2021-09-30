@@ -126,7 +126,12 @@ def dF_orb_main(iorb,nsteps_loop,idx):
         df0g_orb[:,:]=df0g_orb[:,:]*sml_dt
     #end if itr
     df0g_orb[:,:]=df0g_orb[:,:]*orbit.dt_orb[iorb-1]/sml_dt
-    dF_orb[:,:]=dF_orb[:,:]+df0g_orb[:,:]*(mi/np.pi/2)**1.5/1.6022E-19
+    #the first and last point takes half time step
+    if (it_orb==0)or(it_orb==orbit.steps_orb[iorb-1]-1):
+      factor=0.5
+    else:
+      factor=1.0
+    dF_orb[:,:]=dF_orb[:,:]+factor*df0g_orb[:,:]*(mi/np.pi/2)**1.5/1.6022E-19
   #end for it_orb
   return np.mean(dF_orb,axis=0)
 
@@ -163,7 +168,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
     int nphi,int nrho,double rhomax,double* dFdpara,bool use_ff)
   {
     int it_orb,istep,iorb,imu_orb,itr,node,imu_f0,ivp_f0,imu,ivp,inode,nnode,nvp,nmu;
-    double p[3],tmp[2][2],r,z,vp,Br,Bz,Bphi,Bmag,tempi,mu_n,vp_n,rho,D,wmu[2],wvp[2],smu;
+    double p[3],tmp[2][2],r,z,vp,Br,Bz,Bphi,Bmag,tempi,mu_n,vp_n,rho,D,wmu[2],wvp[2],smu,factor;
     double mu,df0g_orb,dvpdt,dFdvp,dFdRphi,value,E[3],dxdt[3],F_node[3],grad_F[2];
     double drho,rho_perp,rhon,wrho[2];
     double gradParF,Br_l,Bz_l,Bphi_l,Bmag_l;
@@ -317,7 +322,13 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
       }
     }//end if itr>0
     df0g_orb=df0g_orb*dt_orb[iorb]/sml_dt;
-    dF_orb[iorb*nt*nsteps_loop+it_orb*nsteps_loop+istep]=df0g_orb*pow(mi/atan(1.)/8,1.5)/1.6022E-19;
+    //the first and last point takes half time step
+    if ((it_orb==0)||(it_orb==steps_orb[iorb]-1)){
+      factor=0.5;
+    }else{
+      factor=1.0;
+    }
+    dF_orb[iorb*nt*nsteps_loop+it_orb*nsteps_loop+istep]=factor*df0g_orb*pow(mi/atan(1.)/8,1.5)/1.6022E-19;
     iorb=iorb+nblocks_max;
     }
   }
