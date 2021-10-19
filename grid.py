@@ -89,6 +89,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
 def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
   global df0g,nphi
   from parameters import use_ff
+  if idx==6: idx=5#f0 and df0 fluxes use the same file
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     if (idx==1)or(idx==5):

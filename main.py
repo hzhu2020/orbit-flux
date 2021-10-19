@@ -3,7 +3,7 @@ from time import time
 from mpi4py import MPI
 from parameters import xgc,bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
                        sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,gyro_E,use_ff,\
-                       diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0
+                       diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0,diag_df0
 import orbit
 import grid
 import main_loop
@@ -54,7 +54,7 @@ if rank==0: print('Preparing orbit locations took',(t_end-t_beg)/60.,'minutes',f
 #memory usage when doing all time steps together
 istep1,istep2=orbit.simple_partition(comm,nsteps,nloops)
 #index loop starts here
-for idx in range(1,6):
+for idx in range(1,7):
   if (idx==1):
     source='turbulence'
     if not(diag_turbulence): continue
@@ -70,6 +70,9 @@ for idx in range(1,6):
   if (idx==5):
     source='f0'
     if not(diag_f0): continue
+  if (idx==6):
+    source='df0'
+    if not(diag_df0): continue
   #write a header to output
   if rank==0:
     output=open(orbit_dir+'/orbit_loss_'+source+'.txt','w')
@@ -100,7 +103,11 @@ for idx in range(1,6):
       else:
         grid.Eturb(xgc,use_ff,gyro_E,nsteps_loop,sml_grad_psitheta,False)
       if(rank==0): print('Finished calculating electric fields',flush=True)
-    if use_gpu:
+    if idx==6:
+      dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
+      for iorb in range(orbit.iorb1,orbit.iorb2+1):
+        dF_orb[iorb-orbit.iorb1,:]=main_loop.dF_in_out(iorb,nsteps_loop)
+    elif use_gpu:
       dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
       for iphi in range(grid.nphi):
         main_loop.copy_data(idx,nsteps_loop,iphi)

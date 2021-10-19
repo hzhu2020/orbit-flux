@@ -10,6 +10,7 @@ diag_collision=True
 diag_source=False
 diag_neutral=False
 diag_f0=False
+diag_df0=False
 xgc='xgc1'#'xgc1' or 'xgca'
 xgc_dir='/path/to/xgc'
 orbit_dir='./input_dir'
