@@ -18,6 +18,10 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
       ff_1dp_tr=fid.read('ff_1dp_tr')
       ff_1dp_p=fid.read('ff_1dp_p')
       ff_1dp_dx=fid.read('one_per_dx')
+      global ff_hdp_tr,ff_hdp_p,ff_hdp_dx
+      ff_hdp_tr=fid.read('ff_hdp_tr')
+      ff_hdp_p=fid.read('ff_hdp_p')
+      ff_hdp_dx=fid.read('half_per_dx')
   else:
     print('Wrong parameter xgc=',xgc)
   guess_min=fid.read('guess_min')
@@ -77,6 +81,9 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
     ff_1dp_tr=np.transpose(ff_1dp_tr)
     ff_1dp_p=np.transpose(ff_1dp_p)
     ff_1dp_dx=np.transpose(ff_1dp_dx)
+    ff_hdp_tr=np.transpose(ff_hdp_tr)
+    ff_hdp_p=np.transpose(ff_hdp_p)
+    ff_hdp_dx=np.transpose(ff_hdp_dx)
 
   rmesh=rz[:,0]
   zmesh=rz[:,1]
@@ -734,18 +741,17 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
     sgn=+1
   else:
     sgn=-1
-  itr_l=ff_1dp_tr[node-1,0]
-  itr_r=ff_1dp_tr[node-1,1]
+  itr_l=ff_hdp_tr[node-1,0]
+  itr_r=ff_hdp_tr[node-1,1]
   if (itr_l<0)or(itr_r<0): return
-  p_l=ff_1dp_p[:,node-1,0]
-  p_r=ff_1dp_p[:,node-1,1]
-  dl_l=ff_1dp_dx[node-1,0]
-  dl_r=ff_1dp_dx[node-1,1]
+  p_l=ff_hdp_p[:,node-1,0]
+  p_r=ff_hdp_p[:,node-1,1]
+  dl_l=ff_hdp_dx[node-1,0]
+  dl_r=ff_hdp_dx[node-1,1]
   dl_tot=dl_l+dl_r
   F_l=np.zeros((2,2,nphi,nsteps),dtype=float)
   F_r=np.zeros((2,2,nphi,nsteps),dtype=float)
-  F_m=np.zeros((2,2,nphi,nsteps),dtype=float)
-  F_m[:,:,:,:]=df0g[ivp:ivp+2,node-min_node,imu:imu+2,:,:]
+  tmp=np.zeros((2,2,nphi,nsteps),dtype=float)
   for k in range(3):
     node_l=nd[k,itr_l-1]
     node_r=nd[k,itr_r-1]
@@ -763,8 +769,6 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
     else:
       F_r[:,:,:,:]=F_r[:,:,:,:]+p_r[k]*df0g[ivp:ivp+2,node_r-min_node,imu:imu+2,:,:]
 
-  value_m=F_m[0,0,:,:]*wvp[0]*wmu[0]+F_m[0,1,:,:]*wvp[0]*wmu[1]\
-         +F_m[1,0,:,:]*wvp[1]*wmu[0]+F_m[1,1,:,:]*wvp[1]*wmu[1]
   value_l=F_l[0,0,:,:]*wvp[0]*wmu[0]+F_l[0,1,:,:]*wvp[0]*wmu[1]\
          +F_l[1,0,:,:]*wvp[1]*wmu[0]+F_l[1,1,:,:]*wvp[1]*wmu[1]
   value_r=F_r[0,0,:,:]*wvp[0]*wmu[0]+F_r[0,1,:,:]*wvp[0]*wmu[1]\
@@ -772,24 +776,23 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
 
   for iphi in range(nphi):
     iphip1=(iphi+1)%nphi
-    iphim1=(iphi-1)%nphi
-    gradParF[iphi,:]=sgn*(-dl_r/(dl_l*dl_tot)*value_l[iphim1,:]\
-                    +(dl_r-dl_l)/(dl_l*dl_r)*value_m[iphi,:]\
-                    +dl_l/(dl_r*dl_tot)*value_r[iphip1,:])
-  return gradParF
+    iphim1=iphi
+    gradParF[iphi,:]=sgn*(value_r[iphip1,:]-value_l[iphim1,:])/dl_tot
+    tmp[:,:,iphi,:]=(dl_l*F_r[:,:,iphip1,:]+dl_r*F_l[:,:,iphim1,:])/dl_tot
+  return tmp,gradParF
 
-def gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps):
+def gradParF_ff_gpu(B_gpu,iphi,nsteps):
   import cupy as cp
   F_ff_deriv_kernel=cp.RawKernel(r'''
   extern "C" __global__
   void F_ff_deriv(double* df0g,double* df0g_r,double* df0g_r_low,double* df0g_r_high,double* df0g_l,\
-       double* df0g_l_low,double* df0g_l_high,double* gradParF,int* nd,int* ff_1dp_tr,double* ff_1dp_p,\
-       double* ff_1dp_dx,int num_tri,int nnode,int min_node,int min_node_ff,int max_node,int max_node_ff,\
+       double* df0g_l_low,double* df0g_l_high,double* gradParF,int* nd,int* ff_hdp_tr,double* ff_hdp_p,\
+       double* ff_hdp_dx,int num_tri,int nnode,int min_node,int min_node_ff,int max_node,int max_node_ff,\
        double* B,int nmu,int nsteps)
   {
     int inode,inode_l,inode_r,ivp,istep,imu,sgn,itr_l,itr_r,node_l,node_r,n_node,n_node_low,n_node_high;
     ivp=threadIdx.x;
-    double value_m,value_l,value_r,p_l[3],p_r[3],dl_l,dl_r,dl_tot;
+    double value_l,value_r,p_l[3],p_r[3],dl_l,dl_r,dl_tot;
     inode=blockIdx.x+min_node-1;
     n_node=max_node-min_node+1;
     n_node_low=min_node-min_node_ff;
@@ -800,16 +803,15 @@ def gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps):
     }else{
       sgn=-1;
     }
-    itr_l=ff_1dp_tr[inode*2+0];itr_r=ff_1dp_tr[inode*2+1];
+    itr_l=ff_hdp_tr[inode*2+0];itr_r=ff_hdp_tr[inode*2+1];
     if ((itr_l<0)||(itr_r<0)) return;
-    p_l[0]=ff_1dp_p[0*nnode*2+inode*2+0];p_r[0]=ff_1dp_p[0*nnode*2+inode*2+1];
-    p_l[1]=ff_1dp_p[1*nnode*2+inode*2+0];p_r[1]=ff_1dp_p[1*nnode*2+inode*2+1];
-    p_l[2]=ff_1dp_p[2*nnode*2+inode*2+0];p_r[2]=ff_1dp_p[2*nnode*2+inode*2+1];
-    dl_l=ff_1dp_dx[inode*2+0];dl_r=ff_1dp_dx[inode*2+1];
+    p_l[0]=ff_hdp_p[0*nnode*2+inode*2+0];p_r[0]=ff_hdp_p[0*nnode*2+inode*2+1];
+    p_l[1]=ff_hdp_p[1*nnode*2+inode*2+0];p_r[1]=ff_hdp_p[1*nnode*2+inode*2+1];
+    p_l[2]=ff_hdp_p[2*nnode*2+inode*2+0];p_r[2]=ff_hdp_p[2*nnode*2+inode*2+1];
+    dl_l=ff_hdp_dx[inode*2+0];dl_r=ff_hdp_dx[inode*2+1];
     dl_tot=dl_l+dl_r;
     for (imu=0;imu<nmu;imu++){
       for (istep=0;istep<nsteps;istep++){
-        value_m=df0g[ivp*n_node*nmu*nsteps+(inode-min_node+1)*nmu*nsteps+imu*nsteps+istep];
         value_l=0.;
         value_r=0.;
         for (int k=0;k<3;k++){
@@ -837,23 +839,24 @@ def gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps):
           }
         }//end for k
         gradParF[ivp*n_node*nmu*nsteps+(inode-min_node+1)*nmu*nsteps+imu*nsteps+istep]\
-              =sgn*(-dl_r/(dl_l*dl_tot)*value_l\
-                    +(dl_r-dl_l)/(dl_l*dl_r)*value_m\
-                    +dl_l/(dl_r*dl_tot)*value_r);
+             =sgn*(value_r-value_l)/dl_tot;
+        df0g[ivp*n_node*nmu*nsteps+(inode-min_node+1)*nmu*nsteps+imu*nsteps+istep]\
+             =(dl_l*value_r+dl_r*value_l)/dl_tot;
       }//end for istep
     }//end for imu
   }
   ''','F_ff_deriv')
   nd_gpu=cp.array(nd,dtype=cp.int32).ravel(order='C')
-  ff_1dp_tr_gpu=cp.array(ff_1dp_tr,dtype=cp.int32).ravel(order='C')
-  ff_1dp_p_gpu=cp.array(ff_1dp_p,dtype=cp.float64).ravel(order='C')
-  ff_1dp_dx_gpu=cp.array(ff_1dp_dx,dtype=cp.float64).ravel(order='C')
+  ff_hdp_tr_gpu=cp.array(ff_hdp_tr,dtype=cp.int32).ravel(order='C')
+  ff_hdp_p_gpu=cp.array(ff_hdp_p,dtype=cp.float64).ravel(order='C')
+  ff_hdp_dx_gpu=cp.array(ff_hdp_dx,dtype=cp.float64).ravel(order='C')
   num_tri=np.shape(nd)[1]
   nmu=np.shape(df0g)[2]
   nvp=np.shape(df0g)[0]
+  df0g_gpu=cp.zeros((nvp*(max_node-min_node+1)*nmu*nsteps,),dtype=cp.float64)
   gradParF_gpu=cp.zeros((nvp*(max_node-min_node+1)*nmu*nsteps,),dtype=cp.float64)
   iphip1=(iphi+1)%nphi
-  iphim1=(iphi-1)%nphi
+  iphim1=iphi%nphi
   df0g_r_gpu=cp.array(df0g[:,:,:,iphip1,:],dtype=cp.float64).ravel(order='C')
   df0g_l_gpu=cp.array(df0g[:,:,:,iphim1,:],dtype=cp.float64).ravel(order='C')
   if min_node_ff<min_node:
@@ -869,11 +872,11 @@ def gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps):
     df0g_r_high_gpu=cp.zeros((1,),dtype=cp.float64)
     df0g_l_high_gpu=cp.zeros((1,),dtype=cp.float64)
   F_ff_deriv_kernel((max_node-min_node+1,),(2*f0_nvp+1,),(df0g_gpu,df0g_r_gpu,df0g_r_low_gpu,df0g_r_high_gpu,\
-      df0g_l_gpu,df0g_l_low_gpu,df0g_l_high_gpu,gradParF_gpu,nd_gpu,ff_1dp_tr_gpu,ff_1dp_p_gpu,ff_1dp_dx_gpu,\
+      df0g_l_gpu,df0g_l_low_gpu,df0g_l_high_gpu,gradParF_gpu,nd_gpu,ff_hdp_tr_gpu,ff_hdp_p_gpu,ff_hdp_dx_gpu,\
       int(num_tri),nnode,min_node,min_node_ff,max_node,max_node_ff,B_gpu,nmu,nsteps))
-  del nd_gpu,ff_1dp_tr_gpu,ff_1dp_p_gpu,ff_1dp_dx_gpu,df0g_r_gpu,df0g_l_gpu,df0g_r_low_gpu,df0g_l_low_gpu,\
+  del nd_gpu,ff_hdp_tr_gpu,ff_hdp_p_gpu,ff_hdp_dx_gpu,df0g_r_gpu,df0g_l_gpu,df0g_r_low_gpu,df0g_l_low_gpu,\
       df0g_r_high_gpu,df0g_l_high_gpu
-  return gradParF_gpu
+  return df0g_gpu,gradParF_gpu
 
 def node_range(tri_psi):
   from orbit import iorb1,iorb2,nt,steps_orb,R_orb,Z_orb
@@ -1088,11 +1091,16 @@ def deriv_node_range(xgc,use_ff):
       if ind<deriv_min_node: deriv_min_node=ind
     if (xgc=='xgc1')and(use_ff):
       for idir in range(2):
+        #for calculating electric field
         itr=ff_1dp_tr[i,idir]
         for k in range(3):
           node=nd[k,itr-1]
           if (node>deriv_max_node): deriv_max_node=node
           if (node<deriv_min_node): deriv_min_node=node
+        #for calculating distribution function
+        itr=ff_hdp_tr[i,idir]
+        for k in range(3):
+          node=nd[k,itr-1]
           if (node>max_node_ff): max_node_ff=node
           if (node<min_node_ff): min_node_ff=node
   return
