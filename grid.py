@@ -18,6 +18,10 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
       ff_1dp_tr=fid.read('ff_1dp_tr')
       ff_1dp_p=fid.read('ff_1dp_p')
       ff_1dp_dx=fid.read('one_per_dx')
+      global ff_hdp_tr,ff_hdp_p,ff_hdp_dx
+      ff_hdp_tr=fid.read('ff_hdp_tr')
+      ff_hdp_p=fid.read('ff_hdp_p')
+      ff_hdp_dx=fid.read('half_per_dx')
   else:
     print('Wrong parameter xgc=',xgc)
   guess_min=fid.read('guess_min')
@@ -77,6 +81,9 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
     ff_1dp_tr=np.transpose(ff_1dp_tr)
     ff_1dp_p=np.transpose(ff_1dp_p)
     ff_1dp_dx=np.transpose(ff_1dp_dx)
+    ff_hdp_tr=np.transpose(ff_hdp_tr)
+    ff_hdp_p=np.transpose(ff_hdp_p)
+    ff_hdp_dx=np.transpose(ff_hdp_dx)
 
   rmesh=rz[:,0]
   zmesh=rz[:,1]
@@ -443,6 +450,37 @@ def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
           Ephi[iphi,i,:,:]=(Epara[:,:]*Bmag-Er[iphi,i,:,:]*Br-Ez[iphi,i,:,:]*Bz)/Bphi
         else:
           Ephi[iphi,i,:,:]=(Epara[:,:]*Bmag-Ez[iphi,i,:,:]*Bpol)/Bphi
+    #interpolate E from interger planes to half-integer planes
+    Er_l=np.zeros((nphi,nnode,nsteps,nrho+1),dtype=float)
+    Ez_l=np.zeros((nphi,nnode,nsteps,nrho+1),dtype=float)
+    Ephi_l=np.zeros((nphi,nnode,nsteps,nrho+1),dtype=float)
+    Er_r=np.zeros((nphi,nnode,nsteps,nrho+1),dtype=float)
+    Ez_r=np.zeros((nphi,nnode,nsteps,nrho+1),dtype=float)
+    Ephi_r=np.zeros((nphi,nnode,nsteps,nrho+1),dtype=float)
+    for i in range(min_node-1,max_node):
+      itr_l=ff_hdp_tr[i,0]
+      itr_r=ff_hdp_tr[i,1]
+      if (itr_l<0)or(itr_r<0): continue
+      p_l=ff_hdp_p[:,i,0]
+      p_r=ff_hdp_p[:,i,1]
+      dl_l=ff_hdp_dx[i,0]
+      dl_r=ff_hdp_dx[i,1]
+      dl_tot=dl_l+dl_r
+      for k in range(3):
+        node_l=nd[k,itr_l-1]
+        node_r=nd[k,itr_r-1]
+        Er_l[:,i,:,:]=Er_l[:,i,:,:]+p_l[k]*Er[:,node_l-1,:,:]*dl_r/dl_tot
+        Er_r[:,i,:,:]=Er_r[:,i,:,:]+p_r[k]*Er[:,node_r-1,:,:]*dl_l/dl_tot
+        Ez_l[:,i,:,:]=Ez_l[:,i,:,:]+p_l[k]*Ez[:,node_l-1,:,:]*dl_r/dl_tot
+        Ez_r[:,i,:,:]=Ez_r[:,i,:,:]+p_r[k]*Ez[:,node_r-1,:,:]*dl_l/dl_tot
+        Ephi_l[:,i,:,:]=Ephi_l[:,i,:,:]+p_l[k]*Ephi[:,node_l-1,:,:]*dl_r/dl_tot
+        Ephi_r[:,i,:,:]=Ephi_r[:,i,:,:]+p_r[k]*Ephi[:,node_r-1,:,:]*dl_l/dl_tot
+    for iphi in range(nphi):
+      iphip1=iphi%nphi
+      iphim1=(iphi-1)%nphi
+      Er[iphi,:,:,:]=Er_l[iphim1,:,:,:]+Er_r[iphip1,:,:,:]
+      Ez[iphi,:,:,:]=Ez_l[iphim1,:,:,:]+Ez_r[iphip1,:,:,:]
+      Ephi[iphi,:,:,:]=Ephi_l[iphim1,:,:,:]+Ephi_r[iphip1,:,:,:]
 
   if (xgc=='xgc1')and(not use_ff):
     rz_arr=np.zeros((1,max_node-min_node+1,1))
@@ -535,6 +573,46 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       }
     }
     ''','ff_deriv')
+    ff_interp_kernel=cp.RawKernel(r'''
+    extern "C" __global__
+    void ff_interp(double* Er,double* Ez,double* Ephi,double* Er_tmp,double* Ez_tmp,double* Ephi_tmp,\
+          int min_node,int max_node,int nnode,int* nd,int* ff_hdp_tr,double* ff_hdp_p,double* ff_hdp_dx,\
+          int nphi,int num_tri)
+    {
+      int inode,iphi,iphip1,iphim1,itr_l,itr_r,node_l,node_r;
+      double p_l[3],p_r[3],dl_l,dl_r,dl_tot,Er_l,Er_r,Ez_l,Ez_r,Ephi_l,Ephi_r;
+      inode=blockIdx.x+min_node-1;
+      iphi=threadIdx.x;
+      if (inode>=max_node) return;
+      iphip1=iphi;
+      iphim1=iphi-1;
+      if (iphip1>=nphi) iphip1=iphip1-nphi;
+      if (iphim1<0) iphim1=iphim1+nphi;
+      itr_l=ff_hdp_tr[inode*2+0];itr_r=ff_hdp_tr[inode*2+1];
+      if ((itr_l<0)||(itr_r<0)) return;
+      p_l[0]=ff_hdp_p[0*nnode*2+inode*2+0];p_r[0]=ff_hdp_p[0*nnode*2+inode*2+1];
+      p_l[1]=ff_hdp_p[1*nnode*2+inode*2+0];p_r[1]=ff_hdp_p[1*nnode*2+inode*2+1];
+      p_l[2]=ff_hdp_p[2*nnode*2+inode*2+0];p_r[2]=ff_hdp_p[2*nnode*2+inode*2+1];
+      dl_l=ff_hdp_dx[inode*2+0];dl_r=ff_hdp_dx[inode*2+1];
+      dl_tot=dl_l+dl_r;
+      Er_l=0.;Er_r=0.;
+      Ez_l=0.;Ez_r=0.;
+      Ephi_l=0.;Ephi_r=0.;
+      for (int k=0;k<3;k++){
+        node_l=nd[k*num_tri+itr_l-1];
+        node_r=nd[k*num_tri+itr_r-1];
+        Er_l=Er_l+p_l[k]*Er_tmp[iphim1*nnode+node_l-1];
+        Er_r=Er_r+p_r[k]*Er_tmp[iphip1*nnode+node_r-1];
+        Ez_l=Ez_l+p_l[k]*Ez_tmp[iphim1*nnode+node_l-1];
+        Ez_r=Ez_r+p_r[k]*Ez_tmp[iphip1*nnode+node_r-1];
+        Ephi_l=Ephi_l+p_l[k]*Ephi_tmp[iphim1*nnode+node_l-1];
+        Ephi_r=Ephi_r+p_r[k]*Ephi_tmp[iphip1*nnode+node_r-1];
+      }
+      Er[iphi*nnode+inode]=(dl_r*Er_l+dl_l*Er_r)/dl_tot;
+      Ez[iphi*nnode+inode]=(dl_r*Ez_l+dl_l*Ez_r)/dl_tot;
+      Ephi[iphi*nnode+inode]=(dl_r*Ephi_l+dl_l*Ephi_r)/dl_tot;
+    }
+    ''','ff_interp')
   if (xgc=='xgc1')and(not use_ff):
     tor_deriv_kernel=cp.RawKernel(r'''
     extern "C" __global__
@@ -573,6 +651,9 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
     ff_1dp_tr_gpu=cp.array(ff_1dp_tr,dtype=cp.int32).ravel(order='C')
     ff_1dp_p_gpu=cp.array(ff_1dp_p,dtype=cp.float64).ravel(order='C')
     ff_1dp_dx_gpu=cp.array(ff_1dp_dx,dtype=cp.float64).ravel(order='C')
+    ff_hdp_tr_gpu=cp.array(ff_hdp_tr,dtype=cp.int32).ravel(order='C')
+    ff_hdp_p_gpu=cp.array(ff_hdp_p,dtype=cp.float64).ravel(order='C')
+    ff_hdp_dx_gpu=cp.array(ff_hdp_dx,dtype=cp.float64).ravel(order='C')
     num_tri=np.shape(nd)[1]
   if (xgc=='xgc1')and(not use_ff):
     dphi=2*np.pi/float(nphi*nwedge)
@@ -585,21 +666,25 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
         dpot_turb_gpu=cp.array(dpot_turb_rho[:,:,istep,irho-1],dtype=cp.float64).ravel(order='C')
       Er_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
       Ez_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
+      Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
       grid_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Er_gpu,Ez_gpu,min_node,max_node,nnode,\
             nelement_r_gpu,nelement_z_gpu,eindex_r_gpu,eindex_z_gpu,value_r_gpu,value_z_gpu,\
             grad_psitheta,psi_only,basis_gpu))
-      Er[:,:,istep,irho]=-cp.asnumpy(Er_gpu).reshape((nphi,nnode),order='C')
-      Ez[:,:,istep,irho]=-cp.asnumpy(Ez_gpu).reshape((nphi,nnode),order='C')
       if (xgc=='xgc1')and(use_ff):
-        Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
         ff_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Er_gpu,Ez_gpu,Ephi_gpu,min_node,max_node,\
              nnode,B_gpu,nd_gpu,ff_1dp_tr_gpu,ff_1dp_p_gpu,ff_1dp_dx_gpu,int(nphi),int(num_tri),basis_gpu))
-        Ephi[:,:,istep,irho]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
+        Er_tmp_gpu=cp.copy(Er_gpu)
+        Ez_tmp_gpu=cp.copy(Ez_gpu)
+        Ephi_tmp_gpu=cp.copy(Ephi_gpu)
+        ff_interp_kernel((max_node-min_node+1,),(nphi,),(Er_gpu,Ez_gpu,Ephi_gpu,Er_tmp_gpu,Ez_tmp_gpu,\
+             Ephi_tmp_gpu,min_node,max_node,nnode,nd_gpu,ff_hdp_tr_gpu,ff_hdp_p_gpu,ff_hdp_dx_gpu,\
+             int(nphi),int(num_tri)))
       if (xgc=='xgc1')and(not use_ff):
-        Ephi_gpu=cp.zeros((nphi*nnode,),dtype=cp.float64)
         tor_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Ephi_gpu,float(dphi),min_node,max_node,\
                           nnode,r_gpu,int(nphi)))
-        Ephi[:,:,istep,irho]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
+      Er[:,:,istep,irho]=-cp.asnumpy(Er_gpu).reshape((nphi,nnode),order='C')
+      Ez[:,:,istep,irho]=-cp.asnumpy(Ez_gpu).reshape((nphi,nnode),order='C')
+      Ephi[:,:,istep,irho]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
 
   del Er_gpu,Ez_gpu,nelement_r_gpu,nelement_z_gpu,value_r_gpu,value_z_gpu,basis_gpu
   if xgc=='xgc1': del Ephi_gpu
@@ -1095,4 +1180,18 @@ def deriv_node_range(xgc,use_ff):
           if (node<deriv_min_node): deriv_min_node=node
           if (node>max_node_ff): max_node_ff=node
           if (node<min_node_ff): min_node_ff=node
+  return
+
+#for interpolating E from integer planes to half-integer planes
+def interpE_node_range():
+  global max_node,min_node
+  min_node_tmp=min_node
+  max_node_tmp=max_node
+  for i in range(min_node_tmp-1,max_node_tmp):
+    for idir in range(2):
+      itr=ff_hdp_tr[i,idir]
+      for k in range(3):
+        node=nd[k,itr-1]
+        if (node>max_node): max_node=node
+        if (node<min_node): min_node=node
   return

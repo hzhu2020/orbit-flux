@@ -45,6 +45,7 @@ else:
   grid.node_range(sml_tri_psi_weighting)
 #also determine the range of nodes needed for spatial derivative
 if diag_turbulence:
+  if (xgc=='xgc1')and(use_ff): grid.interpE_node_range()
   grid.deriv_node_range(xgc,use_ff)
   grid.deriv_min_node=comm.allreduce(grid.deriv_min_node,op=MPI.MIN)
   grid.deriv_max_node=comm.allreduce(grid.deriv_max_node,op=MPI.MAX)
