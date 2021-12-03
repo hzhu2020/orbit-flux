@@ -497,6 +497,17 @@ def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
         rz_arr_rho=np.tile(rz_arr_rho,(1,1,1,nrho))
         Ephi[iphi,min_node-1:max_node,:,1:nrho+1]=(dpot_turb_rho[iphip1,min_node-1:max_node,:,:]\
                         -dpot_turb_rho[iphim1,min_node-1:max_node,:,:])/2/dphi/rz_arr_rho
+    #interpolate E from interger planes to half-integer planes
+    Er_tmp=np.copy(Er)
+    Ez_tmp=np.copy(Ez)
+    Ephi_tmp=np.copy(Ephi)
+    for iphi in range(nphi):
+      iphip1=iphi%nphi
+      iphim1=(iphi-1)%nphi
+      Er[iphi,:,:,:]=(Er_tmp[iphim1,:,:,:]+Er_tmp[iphip1,:,:,:])/2.
+      Ez[iphi,:,:,:]=(Ez_tmp[iphim1,:,:,:]+Ez_tmp[iphip1,:,:,:])/2.
+      Ephi[iphi,:,:,:]=(Ephi_tmp[iphim1,:,:,:]+Ephi_tmp[iphip1,:,:,:])/2.
+
   Er=-Er
   Ez=-Ez
   if xgc=='xgc1': Ephi=-Ephi
@@ -630,6 +641,24 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       Ephi[iphi*nnode+inode]=(dpot_turb[iphip1*nnode+inode]-dpot_turb[iphim1*nnode+inode])/(2.*dphi*r[inode]);
     }
     ''','tor_deriv')
+    tor_interp_kernel=cp.RawKernel(r'''
+    extern "C" __global__
+    void tor_interp(double* Er,double* Ez,double* Ephi,double* Er_tmp,double* Ez_tmp,double* Ephi_tmp,\
+          int min_node,int max_node,int nnode,int nphi)
+    {
+      int inode,iphi,iphip1,iphim1;
+      inode=blockIdx.x+min_node-1;
+      iphi=threadIdx.x;
+      if (inode>=max_node) return;
+      iphip1=iphi;
+      iphim1=iphi-1;
+      if (iphip1>=nphi) iphip1=iphip1-nphi;
+      if (iphim1<0) iphim1=iphim1+nphi;
+      Er[iphi*nnode+inode]=(Er_tmp[iphip1*nnode+inode]+Er_tmp[iphim1*nnode+inode])/2.;
+      Ez[iphi*nnode+inode]=(Ez_tmp[iphip1*nnode+inode]+Ez_tmp[iphim1*nnode+inode])/2.;
+      Ephi[iphi*nnode+inode]=(Ephi_tmp[iphip1*nnode+inode]+Ephi_tmp[iphim1*nnode+inode])/2.;
+    }
+    ''','tor_interp')
   global Er,Ez,Ephi,nrho
   if (xgc=='xgc1')and(gyro_E):
     from parameters import nrho
@@ -682,6 +711,12 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       if (xgc=='xgc1')and(not use_ff):
         tor_deriv_kernel((max_node-min_node+1,),(nphi,),(dpot_turb_gpu,Ephi_gpu,float(dphi),min_node,max_node,\
                           nnode,r_gpu,int(nphi)))
+        Er_tmp_gpu=cp.copy(Er_gpu)
+        Ez_tmp_gpu=cp.copy(Ez_gpu)
+        Ephi_tmp_gpu=cp.copy(Ephi_gpu)
+        tor_interp_kernel((max_node-min_node+1,),(nphi,),(Er_gpu,Ez_gpu,Ephi_gpu,Er_tmp_gpu,Ez_tmp_gpu,\
+             Ephi_tmp_gpu,min_node,max_node,nnode,int(nphi)))
+
       Er[:,:,istep,irho]=-cp.asnumpy(Er_gpu).reshape((nphi,nnode),order='C')
       Ez[:,:,istep,irho]=-cp.asnumpy(Ez_gpu).reshape((nphi,nnode),order='C')
       Ephi[:,:,istep,irho]=-cp.asnumpy(Ephi_gpu).reshape((nphi,nnode),order='C')
