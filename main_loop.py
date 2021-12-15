@@ -150,42 +150,29 @@ def dF_orb_main(iorb,nsteps_loop,idx):
           imu=imu_f0
           ivp=ivp_f0+grid.f0_nvp
           inode=node-grid.min_node
-          if (idx==1)and(xgc=='xgc1')and(use_ff):
-            #use field-line following to interpoloate F at integer planes
-            tmp[0:2,0:2,:,:],gradParF_tmp=grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp)
-            Br_l=Br_l+p[i]*Br
-            Bz_l=Bz_l+p[i]*Bz
-            Bphi_l=Bphi_l+p[i]*Bphi
-            gradParF[:,:]=gradParF[:,:]+p[i]*gradParF_tmp/np.sqrt(2*mu*B)
-          else:
-            tmp[0:2,0:2,:,:]=grid.df0g[ivp:ivp+2,inode,imu:imu+2,:,:]
-
+          tmp[0:2,0:2,:,:]=grid.df0g[ivp:ivp+2,inode,imu:imu+2,:,:]
           value=tmp[0,0,:,:]*wvp[0]*wmu[0]+tmp[0,1,:,:]*wvp[0]*wmu[1]\
                +tmp[1,0,:,:]*wvp[1]*wmu[0]+tmp[1,1,:,:]*wvp[1]*wmu[1]
           if idx==1:
             F_node[:,i,:]=value[:,:]/np.sqrt(2*mu*B)
             dFdvp[:,:]=dFdvp[:,:]+(wmu[0]*(tmp[1,0,:,:]-tmp[0,0,:,:])+wmu[1]*(tmp[1,1,:,:]-tmp[0,1,:,:]))\
                    *p[i]/np.sqrt(2*mu*B)/(grid.f0_dvp*np.sqrt(tempi/mi))
+            if (xgc=='xgc1')and(use_ff):
+              Br_l=Br_l+p[i]*Br
+              Bz_l=Bz_l+p[i]*Bz
+              Bphi_l=Bphi_l+p[i]*Bphi
+              gradParF[:,:]=gradParF[:,:]+p[i]*grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp)/np.sqrt(2*mu*B)
             if (xgc=='xgc1')and(not use_ff):
               dphi=2*np.pi/float(grid.nphi*grid.nwedge)
               for iphi in range(grid.nphi):
                 iphip1=(iphi+1)%grid.nphi
-                iphim1=iphi%grid.nphi
+                iphim1=(iphi-1)%grid.nphi
                 dFdRphi[iphi,:]=dFdRphi[iphi,:]+p[i]*\
-                                (F_node[iphip1,i,:]-F_node[iphim1,i,:])/dphi/grid.rz[node-1,0]
+                                (F_node[iphip1,i,:]-F_node[iphim1,i,:])/2/dphi/grid.rz[node-1,0]
           else:
             df0g_orb[:,:]=df0g_orb[:,:]+value[:,:]*p[i]/np.sqrt(2*mu*B)
       #end for i
       if idx==1:
-        if (xgc=='xgc1')and(not use_ff):
-          #interpolate F to integer planes
-          F_node_tmp=np.copy(F_node)
-          dFdvp_tmp=np.copy(dFdvp)
-          for iphi in range(grid.nphi):
-            iphip1=(iphi+1)%grid.nphi
-            F_node[iphi,:,:]=(F_node_tmp[iphi,:,:]+F_node_tmp[iphip1,:,:])/2.
-            dFdvp[iphi]=(dFdvp_tmp[iphi,:]+dFdvp_tmp[iphip1,:])/2.
-
         grad_F=grid.gradF_orb(F_node,itr,nsteps_loop)
         if (xgc=='xgc1')and(use_ff):
           B_l=np.sqrt(Br_l**2+Bz_l**2+Bphi_l**2)
@@ -440,7 +427,7 @@ def copy_data(idx,nsteps_loop,iphi):
   from parameters import xgc,use_ff
   global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,\
          basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,B_gpu,Ti_gpu,rz_gpu,dFdphi_gpu,dFdpara_gpu
-
+  df0g_gpu=cp.array(grid.df0g[:,:,:,iphi,:],dtype=cp.float64).ravel(order='C')
   B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='C')
   Ti_gpu=cp.array(grid.tempi,dtype=cp.float64)
   rz_gpu=cp.array(grid.rz,dtype=cp.float64).ravel(order='C')
@@ -467,20 +454,18 @@ def copy_data(idx,nsteps_loop,iphi):
   if (xgc=='xgc1')and(idx==1):
     if use_ff:
       dFdphi_gpu=cp.zeros((1,),dtype=cp.float64)
-      df0g_gpu,dFdpara_gpu=grid.gradParF_ff_gpu(B_gpu,iphi,nsteps_loop)
+      dFdpara_gpu=grid.gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps_loop)
     else:
       from numpy import pi
       dphi=2*pi/float(grid.nphi*grid.nwedge)
       iphip1=(iphi+1)%grid.nphi
-      iphim1=iphi%grid.nphi
+      iphim1=(iphi-1)%grid.nphi
       df0g_iphip1_gpu=cp.array(grid.df0g[:,:,:,iphip1,:],dtype=cp.float64).ravel(order='C')
       df0g_iphim1_gpu=cp.array(grid.df0g[:,:,:,iphim1,:],dtype=cp.float64).ravel(order='C')
-      df0g_gpu=cp.array((grid.df0g[:,:,:,iphim1,:]+grid.df0g[:,:,:,iphip1,:])/2.,dtype=cp.float64).ravel(order='C')
-      dFdphi_gpu=(df0g_iphip1_gpu-df0g_iphim1_gpu)/dphi
+      dFdphi_gpu=(df0g_iphip1_gpu-df0g_iphim1_gpu)/2/dphi
       dFdpara_gpu=cp.zeros((1,),dtype=cp.float64)
       del df0g_iphip1_gpu,df0g_iphim1_gpu
   else:
-    df0g_gpu=cp.array(grid.df0g[:,:,:,iphi,:],dtype=cp.float64).ravel(order='C')
     dFdphi_gpu=cp.zeros((1,),dtype=cp.float64)
     dFdpara_gpu=cp.zeros((1,),dtype=cp.float64)
   return
