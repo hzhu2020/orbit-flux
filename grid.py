@@ -93,47 +93,38 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   psi2d=griddata(rz,psi_rz,(R,Z),method='cubic')
   return
 
-def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
+def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
   global df0g,nphi
   from parameters import use_ff
-  if idx==6: idx=5#f0 and df0 fluxes use the same file
+  if (idx==1)or(idx==5)or(idx==6):
+    sname='f0'
+    if (xgc=='xgc1')and((idx==5)or(idx==6)): sname='avgf0'
+    dname='i_f'
+  if (idx==2):
+    sname='collision'
+    dname='i_df0g'
+  if (idx==3):
+    sname='source'
+    dname='i_df0g'
+  if (idx==4):
+    sname='neutral'
+    dname='i_df0g'
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
-    if (idx==1)or(idx==5):
-      if xgc=='xgca':
-        fname=xgc_dir+'/xgc.orbit.f0.'+'{:0>5d}'.format(gstep)+'.bp'
-      elif xgc=='xgc1':
-        if idx==1: fname=xgc_dir+'/xgc.orbit.f0.'+'{:0>5d}'.format(gstep)+'.bp'
-        if idx==5: fname=xgc_dir+'/xgc.orbit.avgf0.'+'{:0>5d}'.format(gstep)+'.bp'
-      else:
-        print('Wrong parameter xgc=',xgc)
-    else:
-      fname=xgc_dir+'/xgc.orbit.'+source+'.'+'{:0>5d}'.format(gstep)+'.bp'
+    fname=xgc_dir+'/xgc.orbit.'+sname+'.'+'{:0>5d}'.format(gstep)+'.bp'
     fid=ad.open(fname,'r')
     nmu=fid.read('mudata')
     nvp=fid.read('vpdata')
-    if xgc=='xgc1':
+    if (xgc=='xgc1')and(idx==1):
       nphi=fid.read('nphi')
-    elif xgc=='xgca':
-      nphi=1
-
-    n_node=max_node-min_node+1
-    if (idx==1)or(idx==5):
-      if xgc=='xgca':
-        tmp=fid.read('i_f',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
-        tmp=np.expand_dims(tmp,axis=0)#add a dimension for nphi=1
-      elif xgc=='xgc1':
-        tmp=fid.read('i_f',start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
     else:
-      if xgc=='xgca':
-        tmp=fid.read('i_df0g',start=[0,min_node-1,0],count=[nmu,n_node,nvp])
-        tmp=np.expand_dims(tmp,axis=0)
-      elif xgc=='xgc1':
-        tmp=fid.read('i_df0g',start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
-    #apply toroidal average here, unless for turbulence flux
-    if (xgc=='xgc1')and(idx!=1):
       nphi=1
-      tmp=np.mean(tmp,axis=0,keepdims=True)
+    n_node=max_node-min_node+1
+    if xgc=='xgca':
+      tmp=fid.read(dname,start=[0,min_node-1,0],count=[nmu,n_node,nvp])
+      tmp=np.expand_dims(tmp,axis=0)#add a dimension for nphi=1
+    elif xgc=='xgc1':
+      tmp=fid.read(dname,start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
     if istep==0: df0g=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
     df0g[:,:,:,:,istep]=tmp
@@ -152,7 +143,6 @@ def readf0(xgc,xgc_dir,source,idx,start_gstep,nsteps,period):
         tmp=np.transpose(tmp)
         if istep==0: df0g_high=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
         df0g_high[:,:,:,:,istep]=tmp
-    #end for istep
     fid.close()
   #end for istep
   return

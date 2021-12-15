@@ -86,7 +86,7 @@ for idx in range(1,7):
     start_gstep_loop=start_gstep+istep1[iloop]*period
     t_beg=time()
     if(rank==0): print('Calculating',source+' flux, iloop=',iloop,flush=True)
-    grid.readf0(xgc,xgc_dir,source,idx,start_gstep_loop,nsteps_loop,period)
+    grid.readf0(xgc,xgc_dir,idx,start_gstep_loop,nsteps_loop,period)
     #prepare turbulence electric field
     if idx==1:
       if(rank==0): print('Reading turbulence electrostatic potential',flush=True)
