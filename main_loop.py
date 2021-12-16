@@ -427,7 +427,6 @@ def copy_data(idx,nsteps_loop,iphi):
   from parameters import xgc,use_ff
   global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,\
          basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,B_gpu,Ti_gpu,rz_gpu,dFdphi_gpu,dFdpara_gpu
-  df0g_gpu=cp.array(grid.df0g[:,:,:,iphi,:],dtype=cp.float64).ravel(order='C')
   B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='C')
   Ti_gpu=cp.array(grid.tempi,dtype=cp.float64)
   rz_gpu=cp.array(grid.rz,dtype=cp.float64).ravel(order='C')
@@ -452,20 +451,22 @@ def copy_data(idx,nsteps_loop,iphi):
     basis_gpu=cp.zeros((1,),dtype=cp.int32)
 
   if (xgc=='xgc1')and(idx==1):
+    df0g_gpu=cp.array(grid.df0g[:,:,:,1,:],dtype=cp.float64).ravel(order='C')
     if use_ff:
       dFdphi_gpu=cp.zeros((1,),dtype=cp.float64)
-      dFdpara_gpu=grid.gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps_loop)
+      dFdpara_gpu=grid.gradParF_ff_gpu(B_gpu,df0g_gpu,1,nsteps_loop)
     else:
       from numpy import pi
       dphi=2*pi/float(grid.nphi*grid.nwedge)
-      iphip1=(iphi+1)%grid.nphi
-      iphim1=(iphi-1)%grid.nphi
+      iphip1=2
+      iphim1=0
       df0g_iphip1_gpu=cp.array(grid.df0g[:,:,:,iphip1,:],dtype=cp.float64).ravel(order='C')
       df0g_iphim1_gpu=cp.array(grid.df0g[:,:,:,iphim1,:],dtype=cp.float64).ravel(order='C')
       dFdphi_gpu=(df0g_iphip1_gpu-df0g_iphim1_gpu)/2/dphi
       dFdpara_gpu=cp.zeros((1,),dtype=cp.float64)
       del df0g_iphip1_gpu,df0g_iphim1_gpu
   else:
+    df0g_gpu=cp.array(grid.df0g[:,:,:,0,:],dtype=cp.float64).ravel(order='C')
     dFdphi_gpu=cp.zeros((1,),dtype=cp.float64)
     dFdpara_gpu=cp.zeros((1,),dtype=cp.float64)
   return

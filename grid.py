@@ -94,8 +94,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   return
 
 def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
-  global df0g,nphi
-  from parameters import use_ff
+  global df0g,nphi,nmu,nvp
   if (idx==1)or(idx==5)or(idx==6):
     sname='f0'
     if (xgc=='xgc1')and((idx==5)or(idx==6)): sname='avgf0'
@@ -116,9 +115,14 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
     nmu=fid.read('mudata')
     nvp=fid.read('vpdata')
     if (xgc=='xgc1')and(idx==1):
+      #for XGC1 turbulence diagnosis, only need to know nphi at this moment
       nphi=fid.read('nphi')
+      fid.close()
+      break
     else:
       nphi=1
+    #read distribution function for non-XGC1-turbulence diagnostics
+    #nphi always equals one here
     n_node=max_node-min_node+1
     if xgc=='xgca':
       tmp=fid.read(dname,start=[0,min_node-1,0],count=[nmu,n_node,nvp])
@@ -128,21 +132,68 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
     if istep==0: df0g=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
     df0g[:,:,:,:,istep]=tmp
+    fid.close()
+  #end for istep
+  return
+
+def readf0_xgc1_turb(iphi,xgc_dir,start_gstep,nsteps,period,use_ff):
+  global df0g
+  iphip1=(iphi+1)%nphi
+  n_node=max_node-min_node+1
+  if iphi==0: df0g=np.zeros((nvp,n_node,nmu,3,nsteps),dtype=float)
+  if use_ff:
     #read additional data if we need field-line following F_i
-    if (idx==1)and(xgc=='xgc1')and(use_ff):
-      global df0g_high,df0g_low
-      if min_node_ff<min_node:
-        n_node=min_node-min_node_ff
-        tmp=fid.read('i_f',start=[0,0,min_node_ff-1,0],count=[nphi,nmu,n_node,nvp])
+    global df0g_high,df0g_low
+    n_node_low=min_node-min_node_ff
+    n_node_high=max_node_ff-max_node
+    if iphi==0:
+      df0g_low=np.zeros((nvp,n_node_low,nmu,3,nsteps),dtype=float)
+      df0g_high=np.zeros((nvp,n_node_high,nmu,3,nsteps),dtype=float)
+  for istep in range(nsteps):
+    gstep=start_gstep+istep*period
+    fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
+    fid=ad.open(fname,'r')
+    if iphi==0:
+      tmp=fid.read('i_f',start=[0,0,min_node-1,0],count=[2,nmu,n_node,nvp])
+      tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
+      df0g[:,:,:,1:3,istep]=tmp
+      tmp=fid.read('i_f',start=[nphi-1,0,min_node-1,0],count=[1,nmu,n_node,nvp])
+      tmp=np.transpose(tmp)
+      df0g[:,:,:,0,istep]=np.squeeze(tmp)
+      if (use_ff)and(min_node_ff<min_node):
+        tmp=fid.read('i_f',start=[0,0,min_node_ff-1,0],count=[2,nmu,n_node_low,nvp])
         tmp=np.transpose(tmp)
-        if istep==0: df0g_low=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
-        df0g_low[:,:,:,:,istep]=tmp
-      if max_node_ff>max_node:
-        n_node=max_node_ff-max_node
-        tmp=fid.read('i_f',start=[0,0,max_node,0],count=[nphi,nmu,n_node,nvp])
+        df0g_low[:,:,:,1:3,istep]=tmp
+        tmp=fid.read('i_f',start=[nphi-1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
         tmp=np.transpose(tmp)
-        if istep==0: df0g_high=np.zeros((nvp,n_node,nmu,nphi,nsteps),dtype=float)
-        df0g_high[:,:,:,:,istep]=tmp
+        df0g_low[:,:,:,0,istep]=np.squeeze(tmp)
+      if (use_ff)and(max_node_ff>max_node):
+        tmp=fid.read('i_f',start=[0,0,max_node,0],count=[2,nmu,n_node_high,nvp])
+        tmp=np.transpose(tmp)
+        df0g_high[:,:,:,1:3,istep]=tmp
+        tmp=fid.read('i_f',start=[nphi-1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
+        tmp=np.transpose(tmp)
+        df0g_high[:,:,:,0,istep]=np.squeeze(tmp)
+    else:
+      #shift index, and then read a new right plane
+      df0g[:,:,:,0,istep]=df0g[:,:,:,1,istep]
+      df0g[:,:,:,1,istep]=df0g[:,:,:,2,istep]
+      tmp=fid.read('i_f',start=[iphip1,0,min_node-1,0],count=[1,nmu,n_node,nvp])
+      tmp=np.transpose(tmp)
+      df0g[:,:,:,2,istep]=np.squeeze(tmp)
+      if (use_ff)and(min_node_ff<min_node):
+        df0g_low[:,:,:,0,istep]=df0g_low[:,:,:,1,istep]
+        df0g_low[:,:,:,1,istep]=df0g_low[:,:,:,2,istep]
+        tmp=fid.read('i_f',start=[iphip1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
+        tmp=np.transpose(tmp)
+        df0g_low[:,:,:,2,istep]=np.squeeze(tmp)
+      if (use_ff)and(max_node_ff>max_node):
+        df0g_high[:,:,:,0,istep]=df0g_high[:,:,:,1,istep]
+        df0g_high[:,:,:,1,istep]=df0g_high[:,:,:,2,istep]
+        tmp=fid.read('i_f',start=[iphip1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
+        tmp=np.transpose(tmp)
+        df0g_high[:,:,:,2,istep]=np.squeeze(tmp)
+    #end if iphi==0
     fid.close()
   #end for istep
   return
@@ -963,8 +1014,6 @@ def gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps):
   ff_1dp_p_gpu=cp.array(ff_1dp_p,dtype=cp.float64).ravel(order='C')
   ff_1dp_dx_gpu=cp.array(ff_1dp_dx,dtype=cp.float64).ravel(order='C')
   num_tri=np.shape(nd)[1]
-  nmu=np.shape(df0g)[2]
-  nvp=np.shape(df0g)[0]
   gradParF_gpu=cp.zeros((nvp*(max_node-min_node+1)*nmu*nsteps,),dtype=cp.float64)
   iphip1=(iphi+1)%nphi
   iphim1=(iphi-1)%nphi
@@ -984,7 +1033,7 @@ def gradParF_ff_gpu(B_gpu,df0g_gpu,iphi,nsteps):
     df0g_l_high_gpu=cp.zeros((1,),dtype=cp.float64)
   F_ff_deriv_kernel((max_node-min_node+1,),(2*f0_nvp+1,),(df0g_gpu,df0g_r_gpu,df0g_r_low_gpu,df0g_r_high_gpu,\
       df0g_l_gpu,df0g_l_low_gpu,df0g_l_high_gpu,gradParF_gpu,nd_gpu,ff_1dp_tr_gpu,ff_1dp_p_gpu,ff_1dp_dx_gpu,\
-      int(num_tri),nnode,min_node,min_node_ff,max_node,max_node_ff,B_gpu,nmu,nsteps))
+      int(num_tri),nnode,min_node,min_node_ff,max_node,max_node_ff,B_gpu,int(nmu),nsteps))
   del nd_gpu,ff_1dp_tr_gpu,ff_1dp_p_gpu,ff_1dp_dx_gpu,df0g_r_gpu,df0g_l_gpu,df0g_r_low_gpu,df0g_l_low_gpu,\
       df0g_r_high_gpu,df0g_l_high_gpu
   return gradParF_gpu

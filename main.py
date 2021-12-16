@@ -17,6 +17,9 @@ try:
   if rank==0: print('Using CuPy for GPU acceleration...')
 except:
   use_gpu=False
+  if (xgc=='xgc1')and(diag_turbulence):
+    if rank==0: print('XGC1 turbulence diagnostics is temporarily disabled for CPU.\nExiting...')
+    exit()
 
 if nloops>nsteps:
   if rank==0: print('Warning: nloops>nsteps. Setting nloops=nsteps...')
@@ -111,6 +114,8 @@ for idx in range(1,7):
     elif use_gpu:
       dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
       for iphi in range(grid.nphi):
+        if (xgc=='xgc1')and(idx==1):
+          grid.readf0_xgc1_turb(iphi,xgc_dir,start_gstep_loop,nsteps_loop,period,use_ff)
         main_loop.copy_data(idx,nsteps_loop,iphi)
         dF_orb[iphi,:,:]=main_loop.dF_orb_main_gpu(orbit.iorb1,orbit.iorb2,nsteps_loop,idx)
         comm.barrier()
