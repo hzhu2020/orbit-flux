@@ -137,6 +137,7 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
   return
 
 def readf0_xgc1_turb(iphi,xgc_dir,start_gstep,nsteps,period,use_ff):
+  #read f0 at a single plane, for GPU calculation.
   global df0g
   iphip1=(iphi+1)%nphi
   n_node=max_node-min_node+1
@@ -194,6 +195,65 @@ def readf0_xgc1_turb(iphi,xgc_dir,start_gstep,nsteps,period,use_ff):
         tmp=np.transpose(tmp)
         df0g_high[:,:,:,2,istep]=np.squeeze(tmp)
     #end if iphi==0
+    fid.close()
+  #end for istep
+  return
+
+def readf0_xgc1_turb2(iphi1,iphi2,xgc_dir,start_gstep,nsteps,period,use_ff):
+  #read f0 from plane iphi1 to iphi2, for CPU calculations. In order to
+  #calculate the toroidal derivative, need two additional planes iphi1-1
+  #and iphi2+1 (not needed when iphi1=0 and iphi2=nphi-1).
+  global df0g
+  iphim1=(iphi1-1)%nphi
+  iphip1=(iphi2+1)%nphi
+  n_node=max_node-min_node+1
+  if (iphi1==0)and(iphi2==nphi-1):
+    mynphi=iphi2-iphi1+1
+  else:
+    mynphi=iphi2-iphi1+3
+  df0g=np.zeros((nvp,n_node,nmu,mynphi,nsteps),dtype=float)
+  if use_ff:
+    global df0g_high,df0g_low
+    n_node_low=min_node-min_node_ff
+    n_node_high=max_node_ff-max_node
+    df0g_low=np.zeros((nvp,n_node_low,nmu,mynphi,nsteps),dtype=float)
+    df0g_high=np.zeros((nvp,n_node_high,nmu,mynphi,nsteps),dtype=float)
+  for istep in range(nsteps):
+    gstep=start_gstep+istep*period
+    fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
+    fid=ad.open(fname,'r')
+    tmp=fid.read('i_f',start=[iphi1,0,min_node-1,0],count=[iphi2-iphi1+1,nmu,n_node,nvp])
+    tmp=np.transpose(tmp)
+    df0g[:,:,:,0:iphi2-iphi1+1,istep]=tmp
+    if (use_ff)and(min_node_ff<min_node):
+      tmp=fid.read('i_f',start=[iphi1,0,min_node_ff-1,0],count=[iphi2-iphi1+1,nmu,n_node_low,nvp])
+      tmp=np.transpose(tmp)
+      df0g_low[:,:,:,0:iphi2-iphi1+1,istep]=tmp
+    if (use_ff)and(max_node_ff>max_node):
+      tmp=fid.read('i_f',start=[iphi1,0,max_node,0],count=[iphi2-iphi1+1,nmu,n_node_high,nvp])
+      tmp=np.transpose(tmp)
+      df0g_high[:,:,:,0:iphi2-iphi1+1,istep]=tmp
+    if (iphi1!=0)or(iphi2!=nphi-1):
+      tmp=fid.read('i_f',start=[iphip1,0,min_node-1,0],count=[1,nmu,n_node,nvp])
+      tmp=np.transpose(tmp)
+      df0g[:,:,:,iphi2-iphi1+1,istep]=np.squeeze(tmp)
+      tmp=fid.read('i_f',start=[iphim1,0,min_node-1,0],count=[1,nmu,n_node,nvp])
+      tmp=np.transpose(tmp)
+      df0g[:,:,:,iphi2-iphi1+2,istep]=np.squeeze(tmp)
+      if (use_ff)and(min_node_ff<min_node):
+        tmp=fid.read('i_f',start=[iphip1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
+        tmp=np.transpose(tmp)
+        df0g_low[:,:,:,iphi2-iphi1+1,istep]=np.squeeze(tmp)
+        tmp=fid.read('i_f',start=[iphim1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
+        tmp=np.transpose(tmp)
+        df0g_low[:,:,:,iphi2-iphi1+2,istep]=np.squeeze(tmp)
+      if (use_ff)and(max_node_ff>max_node):
+        tmp=fid.read('i_f',start=[iphip1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
+        tmp=np.transpose(tmp)
+        df0g_high[:,:,:,iphi2-iphi1+1,istep]=np.squeeze(tmp)
+        tmp=fid.read('i_f',start=[iphim1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
+        tmp=np.transpose(tmp)
+        df0g_high[:,:,:,iphi2-iphi1+2,istep]=np.squeeze(tmp)
     fid.close()
   #end for istep
   return
@@ -873,8 +933,9 @@ def TwoD(x2d,y2d,f2d,xin,yin):
 
   return fout
 
-def gradF_orb(F,itr,nsteps):
-  dFdx=np.zeros((nphi,2,nsteps),dtype=float)
+def gradF_orb(F,itr,nsteps,iphi1,iphi2):
+  mynphi=iphi2-iphi1+1
+  dFdx=np.zeros((mynphi,2,nsteps),dtype=float)
   r=np.zeros((3,),dtype=float)
   z=np.zeros((3,),dtype=float)
   for i in range(3):
@@ -887,14 +948,19 @@ def gradF_orb(F,itr,nsteps):
     print('Error: diag_orbit_loss at gradF_orb, xsj==0',flush=True)
     exit()
     
-  dFdx[:,0,:]=F[:,0,:]*(z[1]-z[2])+F[:,1,:]*(z[2]-z[0])+F[:,2,:]*(z[0]-z[1])
+  dFdx[:,0,:]=F[0:mynphi,0,:]*(z[1]-z[2])+F[0:mynphi,1,:]*(z[2]-z[0])+F[0:mynphi,2,:]*(z[0]-z[1])
   dFdx[:,0,:]=dFdx[:,0,:]/xsj
-  dFdx[:,1,:]=F[:,0,:]*(r[2]-r[1])+F[:,1,:]*(r[0]-r[2])+F[:,2,:]*(r[1]-r[0])
+  dFdx[:,1,:]=F[0:mynphi,0,:]*(r[2]-r[1])+F[0:mynphi,1,:]*(r[0]-r[2])+F[0:mynphi,2,:]*(r[1]-r[0])
   dFdx[:,1,:]=dFdx[:,1,:]/xsj
   return dFdx
 
-def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
-  gradParF=np.zeros((nphi,nsteps))
+def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp,iphi1,iphi2):
+  mynphi=iphi2-iphi1+1
+  if (iphi1==0)and(iphi2==nphi-1):
+    mynphi2=iphi2-iphi1+1
+  else:
+    mynphi2=iphi2-iphi1+3
+  gradParF=np.zeros((mynphi,nsteps))
   if B[node-1,2]>0:
     sgn=+1
   else:
@@ -907,9 +973,9 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
   dl_l=ff_1dp_dx[node-1,0]
   dl_r=ff_1dp_dx[node-1,1]
   dl_tot=dl_l+dl_r
-  F_l=np.zeros((2,2,nphi,nsteps),dtype=float)
-  F_r=np.zeros((2,2,nphi,nsteps),dtype=float)
-  F_m=np.zeros((2,2,nphi,nsteps),dtype=float)
+  F_l=np.zeros((2,2,mynphi2,nsteps),dtype=float)
+  F_r=np.zeros((2,2,mynphi2,nsteps),dtype=float)
+  F_m=np.zeros((2,2,mynphi2,nsteps),dtype=float)
   F_m[:,:,:,:]=df0g[ivp:ivp+2,node-min_node,imu:imu+2,:,:]
   for k in range(3):
     node_l=nd[k,itr_l-1]
@@ -935,9 +1001,9 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp):
   value_r=F_r[0,0,:,:]*wvp[0]*wmu[0]+F_r[0,1,:,:]*wvp[0]*wmu[1]\
          +F_r[1,0,:,:]*wvp[1]*wmu[0]+F_r[1,1,:,:]*wvp[1]*wmu[1]
 
-  for iphi in range(nphi):
-    iphip1=(iphi+1)%nphi
-    iphim1=(iphi-1)%nphi
+  for iphi in range(mynphi):
+    iphip1=(iphi+1)%mynphi2
+    iphim1=(iphi-1)%mynphi2
     gradParF[iphi,:]=sgn*(-dl_r/(dl_l*dl_tot)*value_l[iphim1,:]\
                     +(dl_r-dl_l)/(dl_l*dl_r)*value_m[iphi,:]\
                     +dl_l/(dl_r*dl_tot)*value_r[iphip1,:])

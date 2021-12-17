@@ -17,9 +17,6 @@ try:
   if rank==0: print('Using CuPy for GPU acceleration...')
 except:
   use_gpu=False
-  if (xgc=='xgc1')and(diag_turbulence):
-    if rank==0: print('XGC1 turbulence diagnostics is temporarily disabled for CPU.\nExiting...')
-    exit()
 
 if nloops>nsteps:
   if rank==0: print('Warning: nloops>nsteps. Setting nloops=nsteps...')
@@ -111,20 +108,32 @@ for idx in range(1,7):
       dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
       for iorb in range(orbit.iorb1,orbit.iorb2+1):
         dF_orb[iorb-orbit.iorb1,:]=main_loop.dF_in_out(iorb,nsteps_loop)
-    elif use_gpu:
-      dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
-      for iphi in range(grid.nphi):
-        if (xgc=='xgc1')and(idx==1):
-          grid.readf0_xgc1_turb(iphi,xgc_dir,start_gstep_loop,nsteps_loop,period,use_ff)
-        main_loop.copy_data(idx,nsteps_loop,iphi)
-        dF_orb[iphi,:,:]=main_loop.dF_orb_main_gpu(orbit.iorb1,orbit.iorb2,nsteps_loop,idx)
-        comm.barrier()
-        main_loop.clear_data()
-      dF_orb=np.mean(dF_orb,axis=0)
     else:
-      dF_orb=np.zeros((orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
-      for iorb in range(orbit.iorb1,orbit.iorb2+1):
-        dF_orb[iorb-orbit.iorb1,:]=main_loop.dF_orb_main(iorb,nsteps_loop,idx)
+      dF_orb=np.zeros((grid.nphi,orbit.iorb2-orbit.iorb1+1,nsteps_loop),dtype=float)
+      if use_gpu:
+        for iphi in range(grid.nphi):
+          if (xgc=='xgc1')and(idx==1):
+            grid.readf0_xgc1_turb(iphi,xgc_dir,start_gstep_loop,nsteps_loop,period,use_ff)
+          main_loop.copy_data(idx,nsteps_loop,iphi)
+          dF_orb[iphi,:,:]=main_loop.dF_orb_main_gpu(orbit.iorb1,orbit.iorb2,nsteps_loop,idx)
+          comm.barrier()
+          main_loop.clear_data()
+      else:
+        #for XGC1 turbulence diagnosis, may need to limit memory usage
+        if (xgc=='xgc1')and(idx==1):
+          from parameters import nsteps_phi
+        else:
+          nsteps_phi=1
+        iphi1,iphi2=orbit.simple_partition(comm,grid.nphi,nsteps_phi)
+        for istep in range(nsteps_phi):
+          myiphi1=iphi1[istep]
+          myiphi2=iphi2[istep]
+          if (xgc=='xgc1')and(idx==1):
+            grid.readf0_xgc1_turb2(myiphi1,myiphi2,xgc_dir,start_gstep_loop,nsteps_loop,period,use_ff)
+          for iorb in range(orbit.iorb1,orbit.iorb2+1):
+            dF_orb[myiphi1:myiphi2+1,iorb-orbit.iorb1,:]=main_loop.dF_orb_main(iorb,nsteps_loop,idx,myiphi1,myiphi2)
+      #end if use_gpu
+      dF_orb=np.mean(dF_orb,axis=0)
     #write outputs
     iorb1_list=comm.gather(orbit.iorb1,root=0)
     iorb2_list=comm.gather(orbit.iorb2,root=0)

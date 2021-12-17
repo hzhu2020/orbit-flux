@@ -54,7 +54,7 @@ def dF_in_out(iorb,nsteps_loop):
   #end for it_orb
   return np.mean(dF_orb,axis=0)
 
-def dF_orb_main(iorb,nsteps_loop,idx):
+def dF_orb_main(iorb,nsteps_loop,idx,iphi1,iphi2):
   import orbit,grid
   import numpy as np
   from math import floor
@@ -66,26 +66,31 @@ def dF_orb_main(iorb,nsteps_loop,idx):
   if nrho>0:
     from parameters import rhomax
     drho=rhomax/float(nrho)
+  mynphi=iphi2-iphi1+1
+  if (iphi1==0)and(iphi2==grid.nphi-1):
+    mynphi2=iphi2-iphi1+1
+  else:
+    mynphi2=iphi2-iphi1+3
   p=np.zeros((3,),dtype=float)
-  tmp=np.zeros((2,2,grid.nphi,nsteps_loop),dtype=float)
+  tmp=np.zeros((2,2,mynphi2,nsteps_loop),dtype=float)
   imu_orb=floor((iorb-1)/(orbit.nPphi*orbit.nH))+1
   mu=orbit.mu_orb[imu_orb-1]
-  dF_orb=np.zeros((grid.nphi,nsteps_loop),dtype=float)
+  dF_orb=np.zeros((mynphi,nsteps_loop),dtype=float)
   for it_orb in range(orbit.steps_orb[iorb-1]):
-    df0g_orb=np.zeros((grid.nphi,nsteps_loop),dtype=float)
+    df0g_orb=np.zeros((mynphi,nsteps_loop),dtype=float)
     if idx==1:
       wrho=np.zeros((2,),dtype=float)
-      E=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
-      dxdt=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
-      dvpdt=np.zeros((grid.nphi,nsteps_loop),dtype=float)
-      F_node=np.zeros((grid.nphi,3,nsteps_loop),dtype=float)
-      dFdvp=np.zeros((grid.nphi,nsteps_loop),dtype=float)
-      dFdRphi=np.zeros((grid.nphi,nsteps_loop),dtype=float)
+      E=np.zeros((mynphi,3,nsteps_loop),dtype=float)
+      dxdt=np.zeros((mynphi,3,nsteps_loop),dtype=float)
+      dvpdt=np.zeros((mynphi,nsteps_loop),dtype=float)
+      F_node=np.zeros((mynphi2,3,nsteps_loop),dtype=float)
+      dFdvp=np.zeros((mynphi2,nsteps_loop),dtype=float)
+      dFdRphi=np.zeros((mynphi,nsteps_loop),dtype=float)
       if (xgc=='xgc1')and(use_ff):
         Br_l=0.
         Bz_l=0.
         Bphi_l=0.
-        gradParF=np.zeros((grid.nphi,nsteps_loop),dtype=float)
+        gradParF=np.zeros((mynphi,nsteps_loop),dtype=float)
 
     r=orbit.R_orb[iorb-orbit.iorb1,it_orb]
     z=orbit.Z_orb[iorb-orbit.iorb1,it_orb]
@@ -117,15 +122,19 @@ def dF_orb_main(iorb,nsteps_loop,idx):
             irho1=0
             wrho[0]=1.0
             wrho[1]=0.0
-          E[:,2,:]=wrho[0]*grid.Ephi[:,node-1,:,irho0]+wrho[1]*grid.Ephi[:,node-1,:,irho1]
+          E[:,2,:]=wrho[0]*grid.Ephi[iphi1:iphi2+1,node-1,:,irho0]+wrho[1]*grid.Ephi[iphi1:iphi2+1,node-1,:,irho1]
           if grid.basis[node-1]==1:
-            E[:,0,:]=wrho[0]*grid.Er[:,node-1,:,irho0]+wrho[1]*grid.Er[:,node-1,:,irho1]
-            E[:,1,:]=wrho[0]*grid.Ez[:,node-1,:,irho0]+wrho[1]*grid.Ez[:,node-1,:,irho1]
+            E[:,0,:]=wrho[0]*grid.Er[iphi1:iphi2+1:,node-1,:,irho0]+wrho[1]*grid.Er[iphi1:iphi2+1,node-1,:,irho1]
+            E[:,1,:]=wrho[0]*grid.Ez[iphi1:iphi2+1:,node-1,:,irho0]+wrho[1]*grid.Ez[iphi1:iphi2+1,node-1,:,irho1]
           else:
-            E[:,0,:]=wrho[0]*(grid.Er[:,node-1,:,irho0]*Bz+grid.Ez[:,node-1,:,irho0]*Br)/np.sqrt(Br**2+Bz**2)\
-                    +wrho[1]*(grid.Er[:,node-1,:,irho1]*Bz+grid.Ez[:,node-1,:,irho1]*Br)/np.sqrt(Br**2+Bz**2)
-            E[:,1,:]=wrho[0]*(-grid.Er[:,node-1,:,irho0]*Br+grid.Ez[:,node-1,:,irho0]*Bz)/np.sqrt(Br**2+Bz**2)\
-                    +wrho[1]*(-grid.Er[:,node-1,:,irho1]*Br+grid.Ez[:,node-1,:,irho1]*Bz)/np.sqrt(Br**2+Bz**2)
+            E[:,0,:]=wrho[0]*(grid.Er[iphi1:iphi2+1,node-1,:,irho0]*Bz\
+                             +grid.Ez[iphi1:iphi2+1,node-1,:,irho0]*Br)/np.sqrt(Br**2+Bz**2)\
+                    +wrho[1]*(grid.Er[iphi1:iphi2+1,node-1,:,irho1]*Bz\
+                             +grid.Ez[iphi1:iphi2+1,node-1,:,irho1]*Br)/np.sqrt(Br**2+Bz**2)
+            E[:,1,:]=wrho[0]*(-grid.Er[iphi1:iphi2+1,node-1,:,irho0]*Br\
+                             +grid.Ez[iphi1:iphi2+1,node-1,:,irho0]*Bz)/np.sqrt(Br**2+Bz**2)\
+                    +wrho[1]*(-grid.Er[iphi1:iphi2+1,node-1,:,irho1]*Br\
+                             +grid.Ez[iphi1:iphi2+1,node-1,:,irho1]*Bz)/np.sqrt(Br**2+Bz**2)
 
           dxdt[:,0,:]=dxdt[:,0,:]+p[i]*D*(Bz*E[:,2,:]-Bphi*E[:,1,:])/B**2
           dxdt[:,1,:]=dxdt[:,1,:]+p[i]*D*(Bphi*E[:,0,:]-Br*E[:,2,:])/B**2
@@ -161,24 +170,25 @@ def dF_orb_main(iorb,nsteps_loop,idx):
               Br_l=Br_l+p[i]*Br
               Bz_l=Bz_l+p[i]*Bz
               Bphi_l=Bphi_l+p[i]*Bphi
-              gradParF[:,:]=gradParF[:,:]+p[i]*grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp)/np.sqrt(2*mu*B)
+              gradParF[:,:]=gradParF[:,:]\
+                           +p[i]*grid.gradParF_ff(node,imu,ivp,nsteps_loop,wmu,wvp,iphi1,iphi2)/np.sqrt(2*mu*B)
             if (xgc=='xgc1')and(not use_ff):
               dphi=2*np.pi/float(grid.nphi*grid.nwedge)
-              for iphi in range(grid.nphi):
-                iphip1=(iphi+1)%grid.nphi
-                iphim1=(iphi-1)%grid.nphi
+              for iphi in range(mynphi):
+                iphip1=(iphi+1)%mynphi2
+                iphim1=(iphi-1)%mynphi2
                 dFdRphi[iphi,:]=dFdRphi[iphi,:]+p[i]*\
                                 (F_node[iphip1,i,:]-F_node[iphim1,i,:])/2/dphi/grid.rz[node-1,0]
           else:
             df0g_orb[:,:]=df0g_orb[:,:]+value[:,:]*p[i]/np.sqrt(2*mu*B)
       #end for i
       if idx==1:
-        grad_F=grid.gradF_orb(F_node,itr,nsteps_loop)
+        grad_F=grid.gradF_orb(F_node,itr,nsteps_loop,iphi1,iphi2)
         if (xgc=='xgc1')and(use_ff):
           B_l=np.sqrt(Br_l**2+Bz_l**2+Bphi_l**2)
           if B_l>1E-4: dFdRphi[:,:]=(gradParF[:,:]*B_l-grad_F[:,0,:]*Br_l-grad_F[:,1,:]*Bz_l)/Bphi_l
         df0g_orb[:,:]=-dxdt[:,0,:]*grad_F[:,0,:]-dxdt[:,1,:]*grad_F[:,1,:]\
-                      -dxdt[:,2,:]*dFdRphi[:,:]-dvpdt[:,:]*dFdvp[:,:]
+                      -dxdt[:,2,:]*dFdRphi[:,:]-dvpdt[:,:]*dFdvp[0:mynphi,:]
         df0g_orb[:,:]=df0g_orb[:,:]*sml_dt
     #end if itr
     df0g_orb[:,:]=df0g_orb[:,:]*orbit.dt_orb[iorb-1]/sml_dt

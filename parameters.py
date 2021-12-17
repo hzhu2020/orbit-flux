@@ -6,6 +6,7 @@ gyro_E=True#whether to gyroaverage the potential (xgc1 only)
 ngyro=32#number of points for gyroaveraing
 rhomax=0.012#max of gyroradius (m)
 nrho=6#number of grids in rho
+nsteps_phi=1#separate the toroidal planes into several groups to reduce memory use
 diag_collision=True
 diag_source=False
 diag_neutral=False
