@@ -16,6 +16,7 @@ xgc='xgc1'#'xgc1' or 'xgca'
 xgc_dir='/path/to/xgc'
 orbit_dir='./input_dir'
 bp_read=True
+bp_write=True
 start_gstep=1
 period=1
 nsteps=1

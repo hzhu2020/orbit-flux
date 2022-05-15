@@ -1,9 +1,12 @@
 import numpy as np
 from time import time
 from mpi4py import MPI
-from parameters import xgc,bp_read,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
+from parameters import xgc,bp_read,bp_write,xgc_dir,orbit_dir,start_gstep,period,nsteps,nloops,\
                        sml_tri_psi_weighting,sml_grad_psitheta,Nr,Nz,gyro_E,use_ff,\
                        diag_collision,diag_turbulence,diag_neutral,diag_source,diag_f0,diag_df0
+if bp_write:
+  import adios2
+  first_write=True
 import orbit
 import grid
 import main_loop
@@ -27,6 +30,7 @@ if bp_read:
   orbit.readbp(orbit_dir,comm)
 else:
   orbit.read(orbit_dir,comm)
+
 #determine the range of nodes needed
 if rank==0: print('Reading grid information...',flush=True)
 grid.read(xgc,use_ff,xgc_dir,Nr,Nz)
@@ -74,12 +78,29 @@ for idx in range(1,7):
   if (idx==6):
     source='df0'
     if not(diag_df0): continue
+  if bp_write:
+    try:
+      output=adios2.open(orbit_dir+'/orbit_loss_'+source+'.bp','w',comm)
+      adios2_mpi=True
+    except:
+      if (rank==0):
+        if (first_write): print('Adios2 does not support MPI.',flush=True)
+        output=adios2.open(orbit_dir+'/orbit_loss_'+source+'.bp','w')
+      first_write=False
+      adios2_mpi=False
+  else:
+    adios2_mpi=False
   #write a header to output
-  if rank==0:
+  if (bp_write):
+    if (adios2_mpi)or((not adios2_mpi)and(rank==0)):
+      output.write('nmu',np.array(orbit.nmu))
+      output.write('nPphi',np.array(orbit.nPphi))
+      output.write('nH',np.array(orbit.nH))
+      output.write('nsteps',np.array(nsteps))
+  elif (rank==0):
     output=open(orbit_dir+'/orbit_loss_'+source+'.txt','w')
     output.write('%8d%8d%8d%8d\n'%(orbit.nmu,orbit.nPphi,orbit.nH,nsteps))
     output.close()
-
   #main diagnosis starts here
   for iloop in range(nloops):
     nsteps_loop=istep2[iloop]-istep1[iloop]+1
@@ -137,17 +158,27 @@ for idx in range(1,7):
     #write outputs
     iorb1_list=comm.gather(orbit.iorb1,root=0)
     iorb2_list=comm.gather(orbit.iorb2,root=0)
-    if rank==0:
-      norb=orbit.nmu*orbit.nPphi*orbit.nH
-      dF_output=np.zeros((norb,),dtype=float)
-      count=np.array(iorb2_list)-np.array(iorb1_list)+1
-      displ=np.array(iorb1_list)-1
-    else:
-      dF_output,displ,count=[None]*3
+    norb=orbit.nmu*orbit.nPphi*orbit.nH
     for istep in range(nsteps_loop):
       value=np.array(dF_orb[:,istep],order='C')
-      comm.Gatherv(value,[dF_output,count,displ,MPI.DOUBLE],root=0)
-      if rank==0:
+      if (rank==0)and(not adios2_mpi):
+        dF_output=np.zeros((norb,),dtype=float)
+        count=np.array(iorb2_list)-np.array(iorb1_list)+1
+        displ=np.array(iorb1_list)-1
+      else:
+        dF_output,displ,count=[None]*3
+      if (not adios2_mpi): comm.Gatherv(value,[dF_output,count,displ,MPI.DOUBLE],root=0)
+      if (bp_write)and(adios2_mpi):
+        shape=np.array([norb,],dtype=int)
+        start=np.array([orbit.iorb1,],dtype=int)
+        count=np.array([orbit.iorb2-orbit.iorb1+1,],dtype=int)
+        output.write('dF_orb',value,shape,start,count,end_step=True)
+      elif (rank==0)and(bp_write):
+        shape=np.array([norb,],dtype=int)
+        start=np.array([0,],dtype=int)
+        count=np.array([norb,],dtype=int)
+        output.write('dF_orb',dF_output,shape,start,count,end_step=True)
+      elif (rank==0)and(not bp_write):
         output=open(orbit_dir+'/orbit_loss_'+source+'.txt','a')
         count=0
         for i in range(norb):
@@ -160,5 +191,6 @@ for idx in range(1,7):
     t_end=time()
     if rank==0: print(source,'flux, iloop=',iloop,'finished in',(t_end-t_beg)/60.,'minutes',flush=True)
   #end for iloop
+  if (adios2_mpi)or((not adios2_mpi)and(rank==0)): output.close()
 comm.barrier()
 #end for idx
