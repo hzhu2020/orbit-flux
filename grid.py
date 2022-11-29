@@ -167,14 +167,14 @@ def readf0_xgc1_turb(iphi,xgc_dir,start_gstep,nsteps,period,use_ff):
         df0g_low[:,:,:,1:3,istep]=tmp
         tmp=fid.read('i_f',start=[nphi-1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
         tmp=np.transpose(tmp)
-        df0g_low[:,:,:,0,istep]=np.squeeze(tmp)
+        df0g_low[:,:,:,0,istep]=tmp[:,:,:,0]
       if (use_ff)and(max_node_ff>max_node):
         tmp=fid.read('i_f',start=[0,0,max_node,0],count=[2,nmu,n_node_high,nvp])
         tmp=np.transpose(tmp)
         df0g_high[:,:,:,1:3,istep]=tmp
         tmp=fid.read('i_f',start=[nphi-1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
         tmp=np.transpose(tmp)
-        df0g_high[:,:,:,0,istep]=np.squeeze(tmp)
+        df0g_high[:,:,:,0,istep]=tmp[:,:,:,0]
     else:
       #shift index, and then read a new right plane
       df0g[:,:,:,0,istep]=df0g[:,:,:,1,istep]
@@ -187,13 +187,13 @@ def readf0_xgc1_turb(iphi,xgc_dir,start_gstep,nsteps,period,use_ff):
         df0g_low[:,:,:,1,istep]=df0g_low[:,:,:,2,istep]
         tmp=fid.read('i_f',start=[iphip1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
         tmp=np.transpose(tmp)
-        df0g_low[:,:,:,2,istep]=np.squeeze(tmp)
+        df0g_low[:,:,:,2,istep]=tmp[:,:,:,0]
       if (use_ff)and(max_node_ff>max_node):
         df0g_high[:,:,:,0,istep]=df0g_high[:,:,:,1,istep]
         df0g_high[:,:,:,1,istep]=df0g_high[:,:,:,2,istep]
         tmp=fid.read('i_f',start=[iphip1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
         tmp=np.transpose(tmp)
-        df0g_high[:,:,:,2,istep]=np.squeeze(tmp)
+        df0g_high[:,:,:,2,istep]=tmp[:,:,:,0]
     #end if iphi==0
     fid.close()
   #end for istep
