@@ -225,7 +225,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
     dFdx[1]=dFdx[1]/xsj;
   }
   extern "C" __global__
-  void dF_orb_main(double* dF_orb,double* mu_orb,int nsteps_loop,int* steps_orb,int nPphi,int nH,\
+  void dF_orb_main(double* dF_orb,double* mu_orb,int nsteps_loop,int it0,int* steps_orb,int nPphi,int nH,\
     int nt,int nblocks_max,int mynorb,int idx,double* rt,double* zt,double* vpt,int* itr_save,\
     double* p_save,int* nd,int num_tri,double* B,double* Ti,double mi,double qi,double* nb_curl_nb,\
     double* curlbr,double* curlbz,double* curlbphi,int* basis,double* Er,double* Ez,double* Ephi,
@@ -241,7 +241,7 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
     int irho0,irho1;
     iorb=blockIdx.x/nsteps_loop;
     istep=blockIdx.x-iorb*nsteps_loop;
-    it_orb=threadIdx.x;
+    it_orb=threadIdx.x+it0;
     while(iorb<mynorb)
     {
     if (it_orb>=steps_orb[iorb]){
@@ -420,13 +420,19 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
     from parameters import rhomax
   else:
     rhomax=0.0
-  dF_orb_kernel((nblocks*nsteps_loop,),(orbit.nt,),(dF_orb_gpu,mu_orb_gpu,int(nsteps_loop),\
-     steps_orb_gpu,int(orbit.nPphi),int(orbit.nH),int(orbit.nt),int(nblocks_max),int(mynorb),\
-     int(idx),R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,nd_gpu,int(num_tri),B_gpu,Ti_gpu,mi,qi,\
-     nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,\
-     float(grid.f0_smu_max),float(grid.f0_vp_max),float(grid.f0_dsmu),float(grid.f0_dvp),\
-     int(grid.f0_nvp),int(grid.f0_nmu),int(grid.min_node),int(grid.max_node),df0g_gpu,dFdphi_gpu,\
-     sml_dt,dt_orb_gpu,rz_gpu,int(iorb1),int(grid.nphi),int(nrho),float(rhomax),dFdpara_gpu,use_ff))
+  nthreads_max=512
+  nthreads=min(nthreads_max,orbit.nt)
+  it0=0
+  while it0<orbit.nt:
+    dF_orb_kernel((nblocks*nsteps_loop,),(nthreads,),(dF_orb_gpu,mu_orb_gpu,int(nsteps_loop),int(it0),\
+       steps_orb_gpu,int(orbit.nPphi),int(orbit.nH),int(orbit.nt),int(nblocks_max),int(mynorb),\
+       int(idx),R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,nd_gpu,int(num_tri),B_gpu,Ti_gpu,mi,qi,\
+       nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,\
+       float(grid.f0_smu_max),float(grid.f0_vp_max),float(grid.f0_dsmu),float(grid.f0_dvp),\
+       int(grid.f0_nvp),int(grid.f0_nmu),int(grid.min_node),int(grid.max_node),df0g_gpu,dFdphi_gpu,\
+       sml_dt,dt_orb_gpu,rz_gpu,int(iorb1),int(grid.nphi),int(nrho),float(rhomax),dFdpara_gpu,use_ff))
+    cp.cuda.Stream.null.synchronize()
+    it0=it0+nthreads_max
   dF_orb=cp.asnumpy(dF_orb_gpu).reshape((mynorb,orbit.nt,nsteps_loop),order='C')
   del mu_orb_gpu,R_orb_gpu,Z_orb_gpu,vp_orb_gpu,itr_gpu,p_gpu,steps_orb_gpu,dt_orb_gpu,dF_orb_gpu
   return np.sum(dF_orb,axis=1)
