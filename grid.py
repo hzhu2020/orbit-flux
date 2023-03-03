@@ -315,14 +315,14 @@ def additional_Bfield(xgc,xgc_dir,Nr,Nz,itask1,itask2,comm,summation):
 
   return
 
-def read_dpot_orb(orbit_dir):
+def read_dpot_orb(orbit_dir,rank):
   global dpot_orb
   dpot_orb=np.zeros((nnode))
   fname=orbit_dir+'/pot0m.txt'
   fid=open(fname,'r')
   dum=int(fid.readline(8))
   if dum!=nnode:
-    print('Wrong nnode for pot0m.txt. Set dpot_orb=0.',flush=True)
+    if (rank==0): print('Wrong nnode for pot0m.txt. Set dpot_orb=0.',flush=True)
     return
   fid.readline(8)
   for i in range(nnode):
@@ -331,7 +331,7 @@ def read_dpot_orb(orbit_dir):
     fid.readline(1)
   dum=int(fid.readline(8))
   if dum!=-1:
-    print('Wrong file end for pot0m.txt. Set dpot_orb=0.',flush=True)
+    if (rank==0): print('Wrong file end for pot0m.txt. Set dpot_orb=0.',flush=True)
     dpot_orb[:]=0.0
     return
 

@@ -39,7 +39,7 @@ if diag_turbulence:
   itask1,itask2=orbit.simple_partition(comm,3,size)
   grid.additional_Bfield(xgc,xgc_dir,Nr,Nz,itask1[rank],itask2[rank],comm,MPI.SUM)
   grid.grid_deriv_init(xgc_dir)
-  grid.read_dpot_orb(orbit_dir)
+  grid.read_dpot_orb(orbit_dir,rank)
 
 if rank==0: print('Preparing orbit locations...',flush=True)
 t_beg=time()
