@@ -197,6 +197,7 @@ def dF_orb_main(iorb,nsteps_loop,idx,iphi1,iphi2):
       factor=0.5
     else:
       factor=1.0
+    df0g_orb[np.isnan(df0g_orb)]=0.
     dF_orb[:,:]=dF_orb[:,:]+factor*df0g_orb[:,:]*(mi/np.pi/2)**1.5/1.6022E-19
   #end for it_orb
   return np.mean(dF_orb,axis=0)
@@ -393,6 +394,9 @@ def dF_orb_main_gpu(iorb1,iorb2,nsteps_loop,idx):
       factor=0.5;
     }else{
       factor=1.0;
+    }
+    if (isnan(df0g_orb)){
+      df0g_orb=0;
     }
     dF_orb[iorb*nt*nsteps_loop+it_orb*nsteps_loop+istep]=factor*df0g_orb*pow(mi/atan(1.)/8,1.5)/1.6022E-19;
     iorb=iorb+nblocks_max;
