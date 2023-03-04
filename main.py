@@ -158,7 +158,7 @@ for idx in range(1,7):
       if (not adios2_mpi): comm.Gatherv(value,[dF_output,count,displ,MPI.DOUBLE],root=0)
       if (adios2_mpi):
         shape=np.array([norb,],dtype=int)
-        start=np.array([orbit.iorb1,],dtype=int)
+        start=np.array([orbit.iorb1-1,],dtype=int)
         count=np.array([orbit.iorb2-orbit.iorb1+1,],dtype=int)
         output.write('dF_orb',value,shape,start,count,end_step=True)
       elif (rank==0):
