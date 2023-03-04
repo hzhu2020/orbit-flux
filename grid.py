@@ -136,45 +136,40 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
   #end for istep
   return
 
-def readf0_xgc1_turb(iphi,xgc_dir,start_gstep,nsteps,period,use_ff):
+def readf0_xgc1_turb(iphi,iphi1,xgc_dir,start_gstep,nsteps,period,use_ff):
   #read f0 at a single plane, for GPU calculation.
   global df0g
   iphip1=(iphi+1)%nphi
+  iphim1=(iphi-1)%nphi
+  iphi_list=np.array([iphim1,iphi,iphip1])
   n_node=max_node-min_node+1
-  if iphi==0: df0g=np.zeros((nvp,n_node,nmu,3,nsteps),dtype=float)
+  if iphi==iphi1: df0g=np.zeros((nvp,n_node,nmu,3,nsteps),dtype=float)
   if use_ff:
     #read additional data if we need field-line following F_i
     global df0g_high,df0g_low
     n_node_low=min_node-min_node_ff
     n_node_high=max_node_ff-max_node
-    if iphi==0:
+    if iphi==iphi1:
       df0g_low=np.zeros((nvp,n_node_low,nmu,3,nsteps),dtype=float)
       df0g_high=np.zeros((nvp,n_node_high,nmu,3,nsteps),dtype=float)
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
     fid=ad.open(fname,'r')
-    if iphi==0:
-      tmp=fid.read('i_f',start=[0,0,min_node-1,0],count=[2,nmu,n_node,nvp])
-      tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
-      df0g[:,:,:,1:3,istep]=tmp
-      tmp=fid.read('i_f',start=[nphi-1,0,min_node-1,0],count=[1,nmu,n_node,nvp])
-      tmp=np.transpose(tmp)
-      df0g[:,:,:,0,istep]=np.squeeze(tmp)
-      if (use_ff)and(min_node_ff<min_node):
-        tmp=fid.read('i_f',start=[0,0,min_node_ff-1,0],count=[2,nmu,n_node_low,nvp])
+    if iphi==iphi1:
+      for ind in range(3):
+        iphi_local=iphi_list[ind]
+        tmp=fid.read('i_f',start=[iphi_local,0,min_node-1,0],count=[1,nmu,n_node,nvp])
         tmp=np.transpose(tmp)
-        df0g_low[:,:,:,1:3,istep]=tmp
-        tmp=fid.read('i_f',start=[nphi-1,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
-        tmp=np.transpose(tmp)
-        df0g_low[:,:,:,0,istep]=tmp[:,:,:,0]
-      if (use_ff)and(max_node_ff>max_node):
-        tmp=fid.read('i_f',start=[0,0,max_node,0],count=[2,nmu,n_node_high,nvp])
-        tmp=np.transpose(tmp)
-        df0g_high[:,:,:,1:3,istep]=tmp
-        tmp=fid.read('i_f',start=[nphi-1,0,max_node,0],count=[1,nmu,n_node_high,nvp])
-        tmp=np.transpose(tmp)
-        df0g_high[:,:,:,0,istep]=tmp[:,:,:,0]
+        df0g[:,:,:,ind,istep]=np.squeeze(tmp)
+        if (use_ff)and(min_node_ff<min_node):
+          tmp=fid.read('i_f',start=[iphi_local,0,min_node_ff-1,0],count=[1,nmu,n_node_low,nvp])
+          tmp=np.transpose(tmp)
+          df0g_low[:,:,:,ind,istep]=tmp[:,:,:,0]
+        if (use_ff)and(max_node_ff>max_node):
+          tmp=fid.read('i_f',start=[iphi_local,0,max_node,0],count=[1,nmu,n_node_high,nvp])
+          tmp=np.transpose(tmp)
+          df0g_high[:,:,:,ind,istep]=tmp[:,:,:,0]
     else:
       #shift index, and then read a new right plane
       df0g[:,:,:,0,istep]=df0g[:,:,:,1,istep]
