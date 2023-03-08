@@ -164,7 +164,7 @@ for idx in range(1,7):
             iphi2=iphi2[plane_id]
           else:
             iphi1=0
-            iphi2=grid.nphi
+            iphi2=grid.nphi-1
         else:
           iphi1=0
           iphi2=0
