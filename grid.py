@@ -4,7 +4,7 @@ from math import floor
 from scipy.interpolate import griddata
 
 def read(xgc,use_ff,xgc_dir,Nr,Nz):
-  global rz,guess_table,guess_xtable,guess_count,guess_list,mapping,\
+  global rz,guess_xtable,guess_count,guess_list,mapping,\
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
   fname=xgc_dir+'/xgc.mesh.bp'
@@ -28,7 +28,6 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   inv_guess_d=fid.read('inv_guess_d')
   psi_rz=fid.read('psi')
   nnode=np.size(psi_rz)
-  guess_table=fid.read('guess_table')
   guess_xtable=fid.read('guess_xtable')
   guess_count=fid.read('guess_count')
   guess_list=fid.read('guess_list')
@@ -72,7 +71,6 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   f0_nmu=fid.read('f0_nmu')
   fid.close()
   #XGC outputs in Fortran order but here the order is different
-  guess_table=np.transpose(guess_table)
   mapping=np.transpose(mapping)
   guess_xtable=np.transpose(guess_xtable)
   guess_count=np.transpose(guess_count)
@@ -837,7 +835,7 @@ def search_tr2(xy):
    eps=1e-10
  
    ilo,jlo=1,1
-   ihi,jhi=np.shape(guess_table)
+   ihi,jhi=np.shape(guess_xtable)
    ij=np.zeros((2,),dtype=int)
    ij[0]=floor((xy[0]-guess_min[0])*inv_guess_d[0])+1
    ij[1]=floor((xy[1]-guess_min[1])*inv_guess_d[1])+1
@@ -1257,7 +1255,7 @@ def node_range_gpu(tri_psi):
   itr_save=np.zeros((mynorb,nt),dtype=int)
   p_save=np.zeros((mynorb,nt,3),dtype=float)
   num_tri=np.shape(mapping)[2]
-  ihi,jhi=np.shape(guess_table)
+  ihi,jhi=np.shape(guess_xtable)
   guess_min_gpu=cp.array(guess_min,dtype=cp.float64)
   inv_guess_d_gpu=cp.array(inv_guess_d,dtype=cp.float64)
   guess_xtable_gpu=cp.array(guess_xtable,dtype=cp.int32).ravel(order='C')
