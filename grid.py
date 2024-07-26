@@ -1280,8 +1280,10 @@ def node_range_gpu(tri_psi):
     nd_gpu,int(rlin.size),int(zlin.size),int(mynorb),int(nblocks_max),min_node_gpu,max_node_gpu))
   itr_save=cp.asnumpy(itr_save_gpu).reshape((mynorb,nt),order='C')
   p_save=cp.asnumpy(p_save_gpu).reshape((mynorb,nt,3),order='C')
-  min_node=np.asscalar(cp.asnumpy(cp.min(min_node_gpu)))
-  max_node=np.asscalar(cp.asnumpy(cp.max(max_node_gpu)))
+  min_node=cp.asnumpy(cp.min(min_node_gpu))
+  max_node=cp.asnumpy(cp.max(max_node_gpu))
+  min_node=min_node.item()
+  max_node=max_node.item()
   del guess_min_gpu,inv_guess_d_gpu,guess_xtable_gpu,guess_list_gpu,guess_count_gpu,mapping_gpu,\
       nd_gpu,rlin_gpu,zlin_gpu,psi2d_gpu,psi_rz_gpu,R_orb_gpu,Z_orb_gpu,steps_orb_gpu,\
       itr_save_gpu,p_save_gpu,min_node_gpu,max_node_gpu
