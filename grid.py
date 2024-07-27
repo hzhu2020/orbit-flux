@@ -9,30 +9,29 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
   fname=xgc_dir+'/xgc.mesh.bp'
   fid=ad.open(fname,'r')
-  if xgc=='xgca':
-    rz=fid.read('/coordinates/values')
-  elif xgc=='xgc1':
-    rz=fid.read('rz')
-    if use_ff:
-      global ff_1dp_tr,ff_1dp_p,ff_1dp_dx
-      ff_1dp_tr=fid.read('ff_1dp_tr')
-      ff_1dp_p=fid.read('ff_1dp_p')
-      ff_1dp_dx=fid.read('one_per_dx')
-      global ff_hdp_tr,ff_hdp_p,ff_hdp_dx
-      ff_hdp_tr=fid.read('ff_hdp_tr')
-      ff_hdp_p=fid.read('ff_hdp_p')
-      ff_hdp_dx=fid.read('half_per_dx')
-  else:
-    print('Wrong parameter xgc=',xgc)
-  guess_min=fid.read('guess_min')
-  inv_guess_d=fid.read('inv_guess_d')
+  rz=fid.read('rz')
+  if (xgc=='xgc1')and(use_ff):
+    global ff_1dp_tr,ff_1dp_p,ff_1dp_dx
+    ff_1dp_tr=fid.read('ff_1dp_tr')
+    ff_1dp_p=fid.read('ff_1dp_p')
+    ff_1dp_dx=fid.read('one_per_dx')
+    global ff_hdp_tr,ff_hdp_p,ff_hdp_dx
+    ff_hdp_tr=fid.read('ff_hdp_tr')
+    ff_hdp_p=fid.read('ff_hdp_p')
+    ff_hdp_dx=fid.read('half_per_dx')
+  guess_min_r=fid.read('guess_min_r')
+  guess_min_z=fid.read('guess_min_z')
+  guess_min=np.array([guess_min_r,guess_min_z])
+  inv_d1=fid.read('guess_inv_d1')
+  inv_d2=fid.read('guess_inv_d2')
+  inv_guess_d=np.array([inv_d1,inv_d2])
   psi_rz=fid.read('psi')
   nnode=np.size(psi_rz)
   guess_xtable=fid.read('guess_xtable')
   guess_count=fid.read('guess_count')
   guess_list=fid.read('guess_list')
   mapping=fid.read('mapping')
-  nd=fid.read('nd')
+  nd=fid.read('nd_connect_list')
   fid.close()
 
   fname=xgc_dir+'/xgc.equil.bp'
@@ -42,12 +41,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
 
   fname=xgc_dir+'/xgc.bfield.bp'
   fid=ad.open(fname,'r')
-  if xgc=='xgca':
-    B=fid.read('bfield')
-  elif xgc=='xgc1':
-    B=fid.read('/node_data[0]/values')
-  else:
-    print('Wrong parameter xgc=',xgc)
+  B=fid.read('bfield')
   fid.close()
 
   if xgc=='xgc1':
