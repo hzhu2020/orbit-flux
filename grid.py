@@ -8,7 +8,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
   fname=xgc_dir+'/xgc.mesh.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   rz=fid.read('rz')
   if (xgc=='xgc1')and(use_ff):
     global ff_1dp_tr,ff_1dp_p,ff_1dp_dx
@@ -35,24 +35,24 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   fid.close()
 
   fname=xgc_dir+'/xgc.equil.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   psix=fid.read('eq_x_psi')
   fid.close()
 
   fname=xgc_dir+'/xgc.bfield.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   B=fid.read('bfield')
   fid.close()
 
   if xgc=='xgc1':
     global nwedge
     fname=xgc_dir+'/xgc.units.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     nwedge=fid.read('sml_wedge_n')
     fid.close()
 
   fname=xgc_dir+'/xgc.f0.mesh.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   tempi=fid.read('f0_T_ev')
   tempi=np.squeeze(tempi)#important for dimension match
   #for kinetic-electron simulations, choose ion temperature
@@ -103,7 +103,7 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+sname+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     nmu=fid.read('mudata')
     nvp=fid.read('vpdata')
     if (xgc=='xgc1')and(idx==1):
@@ -147,7 +147,7 @@ def readf0_xgc1_turb(iphi,iphi1,xgc_dir,start_gstep,nsteps,period,use_ff):
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     if iphi==iphi1:
       for ind in range(3):
         iphi_local=iphi_list[ind]
@@ -208,7 +208,7 @@ def readf0_xgc1_turb2(iphi1,iphi2,xgc_dir,start_gstep,nsteps,period,use_ff):
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     tmp=fid.read('i_f',start=[iphi1,0,min_node-1,0],count=[iphi2-iphi1+1,nmu,n_node,nvp])
     tmp=np.transpose(tmp)
     df0g[:,:,:,0:iphi2-iphi1+1,istep]=tmp
@@ -248,7 +248,7 @@ def readf0_xgc1_turb2(iphi1,iphi2,xgc_dir,start_gstep,nsteps,period,use_ff):
 def grid_deriv_init(xgc_dir):
   global nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
   fname=xgc_dir+'/xgc.grad_rz.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   nelement_r=fid.read('nelement_r')
   eindex_r=fid.read('eindex_r')
   value_r=fid.read('value_r')
@@ -268,12 +268,12 @@ def grid_deriv_init(xgc_dir):
 def additional_Bfield(xgc,xgc_dir,Nr,Nz,itask1,itask2,comm,summation):
   global basis,nb_curl_nb,curlbr,curlbz,curlbphi
   fname=xgc_dir+'/xgc.grad_rz.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   basis=fid.read('basis')
   fid.close()
 
   fname=xgc_dir+'/xgc.f0.mesh.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   nb_curl_nb=fid.read('nb_curl_nb')
   fid.close()
   
@@ -337,7 +337,7 @@ def read_dpot_turb(xgc,xgc_dir,start_gstep,nsteps,period):
       fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
     elif xgc=='xgc1':
       fname=xgc_dir+'/xgc.3d.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     dpot[:,:]=fid.read('dpot')
     pot0[:,:]=fid.read('pot0')
     if xgc=='xgc1':#move n=0,m!=0 part to pot0

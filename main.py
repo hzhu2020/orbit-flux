@@ -42,7 +42,7 @@ if rank==0: print('Reading orbit information...',flush=True)
 orbit.read(orbit_dir,plane_comm)
 #test adios2 mpi
 try:
-  testmpi=adios2.open(orbit_dir+'/orbit.bp','r',comm)
+  testmpi=adios2.open(orbit_dir+'/orbit.bp','rra',comm)
   adios2_mpi=True
   testmpi.close()
 except:
