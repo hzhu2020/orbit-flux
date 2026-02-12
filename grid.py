@@ -279,9 +279,9 @@ def additional_Bfield(xgc,xgc_dir,Nr,Nz,itask1,itask2,comm,summation):
   Br=np.zeros((Nz,Nr),dtype=float)
   Bz=np.zeros((Nz,Nr),dtype=float)
   Bphi=np.zeros((Nz,Nr),dtype=float)
-  if (itask1<=0)and(0<=itask2): Br=griddata(rz,B[:,0],(R,Z),method='cubic')
-  if (itask1<=1)and(1<=itask2): Bz=griddata(rz,B[:,1],(R,Z),method='cubic')
-  if (itask1<=2)and(2<=itask2): Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
+  if (itask1<=0)and(0<=itask2): Br=griddata(rz,B[0,:],(R,Z),method='cubic')
+  if (itask1<=1)and(1<=itask2): Bz=griddata(rz,B[1,:],(R,Z),method='cubic')
+  if (itask1<=2)and(2<=itask2): Bphi=griddata(rz,B[2,:],(R,Z),method='cubic')
   Br=comm.allreduce(Br,op=summation)
   Bz=comm.allreduce(Bz,op=summation)
   Bphi=comm.allreduce(Bphi,op=summation)
@@ -497,7 +497,7 @@ def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       if (basis[i]==0)and(psi_only): Ez[:,i,:,:]=0
   if (xgc=='xgc1')and(use_ff):
     for i in range(min_node-1,max_node):
-      Bphi=B[i,2]
+      Bphi=B[2,i]
       if Bphi>0:
         sgn=+1
       else:
@@ -561,9 +561,9 @@ def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       Ez[iphi,:,:,:]=Ez_l[iphim1,:,:,:]+Ez_r[iphip1,:,:,:]
       Ephi[iphi,:,:,:]=Ephi_l[iphim1,:,:,:]+Ephi_r[iphip1,:,:,:]
     for i in range(min_node-1,max_node):
-      Br=B[i,0]
-      Bz=B[i,1]
-      Bphi=B[i,2]
+      Br=B[0,i]
+      Bz=B[1,i]
+      Bphi=B[2,i]
       Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
       Bpol=np.sqrt(Br**2+Bz**2)
       #from Epara to Ephi
@@ -766,7 +766,7 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
   value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
   basis_gpu=cp.array(basis,dtype=cp.int32)
   if (xgc=='xgc1')and(use_ff):
-    B_gpu=cp.array(B,dtype=cp.float64).ravel(order='C')
+    B_gpu=cp.array(B,dtype=cp.float64).ravel(order='F')
     nd_gpu=cp.array(nd,dtype=cp.int32).ravel(order='C')
     ff_1dp_tr_gpu=cp.array(ff_1dp_tr,dtype=cp.int32).ravel(order='C')
     ff_1dp_p_gpu=cp.array(ff_1dp_p,dtype=cp.float64).ravel(order='C')
