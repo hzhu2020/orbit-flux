@@ -117,8 +117,7 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
     #nphi always equals one here
     n_node=max_node-min_node+1
     if xgc=='xgca':
-      tmp=fid.read(dname,start=[0,min_node-1,0],count=[nmu,n_node,nvp])
-      tmp=np.expand_dims(tmp,axis=0)#add a dimension for nphi=1
+      tmp=fid.read(dname,start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp]) 
     elif xgc=='xgc1':
       tmp=fid.read(dname,start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
