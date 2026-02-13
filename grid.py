@@ -947,7 +947,7 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp,iphi1,iphi2):
   else:
     mynphi2=iphi2-iphi1+3
   gradParF=np.zeros((mynphi,nsteps))
-  if B[node-1,2]>0:
+  if B[2,node-1]>0:
     sgn=+1
   else:
     sgn=-1

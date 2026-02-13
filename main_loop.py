@@ -23,9 +23,9 @@ def dF_in_out(iorb,nsteps_loop):
     if (itr>0):
       for i in range(3):
         node=grid.nd[i,itr-1]
-        Br=grid.B[node-1,0]
-        Bz=grid.B[node-1,1]
-        Bphi=grid.B[node-1,2]
+        Br=grid.B[0,node-1]
+        Bz=grid.B[1,node-1]
+        Bphi=grid.B[2,node-1]
         B=np.sqrt(Br**2+Bz**2+Bphi**2)
         tempi=grid.tempi[node-1]*1.6022E-19
         mu_n=2*mu*B/tempi
@@ -100,9 +100,9 @@ def dF_orb_main(iorb,nsteps_loop,idx,iphi1,iphi2):
     if (itr>0):
       for i in range(3):
         node=grid.nd[i,itr-1]
-        Br=grid.B[node-1,0]
-        Bz=grid.B[node-1,1]
-        Bphi=grid.B[node-1,2]
+        Br=grid.B[0,node-1]
+        Bz=grid.B[1,node-1]
+        Bphi=grid.B[2,node-1]
         B=np.sqrt(Br**2+Bz**2+Bphi**2)
         tempi=grid.tempi[node-1]*1.6022E-19
         mu_n=2*mu*B/tempi
