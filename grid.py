@@ -8,7 +8,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
          guess_min,inv_guess_d,nnode,nd,psix,psi_rz,psi2d,rlin,zlin,R,Z,\
          B,tempi,f0_smu_max,f0_vp_max,f0_dsmu,f0_dvp,f0_nvp,f0_nmu
   fname=xgc_dir+'/xgc.mesh.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   rz=fid.read('rz')
   if (xgc=='xgc1')and(use_ff):
     global ff_1dp_tr,ff_1dp_p,ff_1dp_dx
@@ -35,24 +35,24 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   fid.close()
 
   fname=xgc_dir+'/xgc.equil.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   psix=fid.read('eq_x_psi')
   fid.close()
 
   fname=xgc_dir+'/xgc.bfield.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   B=fid.read('bfield')
   fid.close()
 
   if xgc=='xgc1':
     global nwedge
     fname=xgc_dir+'/xgc.units.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     nwedge=fid.read('sml_wedge_n')
     fid.close()
 
   fname=xgc_dir+'/xgc.f0.mesh.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   tempi=fid.read('f0_T_ev')
   tempi=np.squeeze(tempi)#important for dimension match
   #for kinetic-electron simulations, choose ion temperature
@@ -103,7 +103,7 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+sname+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     nmu=fid.read('mudata')
     nvp=fid.read('vpdata')
     if (xgc=='xgc1')and(idx==1):
@@ -117,8 +117,7 @@ def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
     #nphi always equals one here
     n_node=max_node-min_node+1
     if xgc=='xgca':
-      tmp=fid.read(dname,start=[0,min_node-1,0],count=[nmu,n_node,nvp])
-      tmp=np.expand_dims(tmp,axis=0)#add a dimension for nphi=1
+      tmp=fid.read(dname,start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp]) 
     elif xgc=='xgc1':
       tmp=fid.read(dname,start=[0,0,min_node-1,0],count=[nphi,nmu,n_node,nvp])
     tmp=np.transpose(tmp)#[vp,node,mu] order as in Fortran XGC
@@ -147,7 +146,7 @@ def readf0_xgc1_turb(iphi,iphi1,xgc_dir,start_gstep,nsteps,period,use_ff):
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     if iphi==iphi1:
       for ind in range(3):
         iphi_local=iphi_list[ind]
@@ -208,7 +207,7 @@ def readf0_xgc1_turb2(iphi1,iphi2,xgc_dir,start_gstep,nsteps,period,use_ff):
   for istep in range(nsteps):
     gstep=start_gstep+istep*period
     fname=xgc_dir+'/xgc.orbit.'+'f0'+'.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     tmp=fid.read('i_f',start=[iphi1,0,min_node-1,0],count=[iphi2-iphi1+1,nmu,n_node,nvp])
     tmp=np.transpose(tmp)
     df0g[:,:,:,0:iphi2-iphi1+1,istep]=tmp
@@ -248,7 +247,7 @@ def readf0_xgc1_turb2(iphi1,iphi2,xgc_dir,start_gstep,nsteps,period,use_ff):
 def grid_deriv_init(xgc_dir):
   global nelement_r,eindex_r,value_r,nelement_z,eindex_z,value_z
   fname=xgc_dir+'/xgc.grad_rz.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   nelement_r=fid.read('nelement_r')
   eindex_r=fid.read('eindex_r')
   value_r=fid.read('value_r')
@@ -268,21 +267,21 @@ def grid_deriv_init(xgc_dir):
 def additional_Bfield(xgc,xgc_dir,Nr,Nz,itask1,itask2,comm,summation):
   global basis,nb_curl_nb,curlbr,curlbz,curlbphi
   fname=xgc_dir+'/xgc.grad_rz.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   basis=fid.read('basis')
   fid.close()
 
   fname=xgc_dir+'/xgc.f0.mesh.bp'
-  fid=ad.open(fname,'r')
+  fid=ad.open(fname,'rra')
   nb_curl_nb=fid.read('nb_curl_nb')
   fid.close()
   
   Br=np.zeros((Nz,Nr),dtype=float)
   Bz=np.zeros((Nz,Nr),dtype=float)
   Bphi=np.zeros((Nz,Nr),dtype=float)
-  if (itask1<=0)and(0<=itask2): Br=griddata(rz,B[:,0],(R,Z),method='cubic')
-  if (itask1<=1)and(1<=itask2): Bz=griddata(rz,B[:,1],(R,Z),method='cubic')
-  if (itask1<=2)and(2<=itask2): Bphi=griddata(rz,B[:,2],(R,Z),method='cubic')
+  if (itask1<=0)and(0<=itask2): Br=griddata(rz,B[0,:],(R,Z),method='cubic')
+  if (itask1<=1)and(1<=itask2): Bz=griddata(rz,B[1,:],(R,Z),method='cubic')
+  if (itask1<=2)and(2<=itask2): Bphi=griddata(rz,B[2,:],(R,Z),method='cubic')
   Br=comm.allreduce(Br,op=summation)
   Bz=comm.allreduce(Bz,op=summation)
   Bphi=comm.allreduce(Bphi,op=summation)
@@ -337,7 +336,7 @@ def read_dpot_turb(xgc,xgc_dir,start_gstep,nsteps,period):
       fname=xgc_dir+'/xgc.2d.'+'{:0>5d}'.format(gstep)+'.bp'
     elif xgc=='xgc1':
       fname=xgc_dir+'/xgc.3d.'+'{:0>5d}'.format(gstep)+'.bp'
-    fid=ad.open(fname,'r')
+    fid=ad.open(fname,'rra')
     dpot[:,:]=fid.read('dpot')
     pot0[:,:]=fid.read('pot0')
     if xgc=='xgc1':#move n=0,m!=0 part to pot0
@@ -498,7 +497,7 @@ def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       if (basis[i]==0)and(psi_only): Ez[:,i,:,:]=0
   if (xgc=='xgc1')and(use_ff):
     for i in range(min_node-1,max_node):
-      Bphi=B[i,2]
+      Bphi=B[2,i]
       if Bphi>0:
         sgn=+1
       else:
@@ -562,9 +561,9 @@ def Eturb(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
       Ez[iphi,:,:,:]=Ez_l[iphim1,:,:,:]+Ez_r[iphip1,:,:,:]
       Ephi[iphi,:,:,:]=Ephi_l[iphim1,:,:,:]+Ephi_r[iphip1,:,:,:]
     for i in range(min_node-1,max_node):
-      Br=B[i,0]
-      Bz=B[i,1]
-      Bphi=B[i,2]
+      Br=B[0,i]
+      Bz=B[1,i]
+      Bphi=B[2,i]
       Bmag=np.sqrt(Br**2+Bz**2+Bphi**2)
       Bpol=np.sqrt(Br**2+Bz**2)
       #from Epara to Ephi
@@ -767,7 +766,7 @@ def Eturb_gpu(xgc,use_ff,gyro_E,nsteps,grad_psitheta,psi_only):
   value_z_gpu=cp.array(value_z,dtype=cp.float64).ravel(order='C')
   basis_gpu=cp.array(basis,dtype=cp.int32)
   if (xgc=='xgc1')and(use_ff):
-    B_gpu=cp.array(B,dtype=cp.float64).ravel(order='C')
+    B_gpu=cp.array(B,dtype=cp.float64).ravel(order='F')
     nd_gpu=cp.array(nd,dtype=cp.int32).ravel(order='C')
     ff_1dp_tr_gpu=cp.array(ff_1dp_tr,dtype=cp.int32).ravel(order='C')
     ff_1dp_p_gpu=cp.array(ff_1dp_p,dtype=cp.float64).ravel(order='C')
@@ -948,7 +947,7 @@ def gradParF_ff(node,imu,ivp,nsteps,wmu,wvp,iphi1,iphi2):
   else:
     mynphi2=iphi2-iphi1+3
   gradParF=np.zeros((mynphi,nsteps))
-  if B[node-1,2]>0:
+  if B[2,node-1]>0:
     sgn=+1
   else:
     sgn=-1

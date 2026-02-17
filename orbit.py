@@ -8,7 +8,7 @@ def read(orbit_dir,comm):
   global nmu,nH,nPphi,nt,iorb1,iorb2,\
         steps_orb,dt_orb,mu_orb,R_orb,Z_orb,vp_orb
   if rank==0:
-    fid=adios2.open(fname,'r')
+    fid=adios2.open(fname,'rra')
     nmu=fid.read('nmu')
     nPphi=fid.read('nPphi')
     nH=fid.read('nH')
@@ -36,7 +36,7 @@ def read(orbit_dir,comm):
   R_orb=np.zeros((mynorb,nt),dtype=float,order='C')
   Z_orb=np.zeros((mynorb,nt),dtype=float,order='C')
   vp_orb=np.zeros((mynorb,nt),dtype=float,order='C')
-  fid=adios2.open(fname,'r')
+  fid=adios2.open(fname,'rra')
   R_orb[:,:]=fid.read('R_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
   Z_orb[:,:]=fid.read('Z_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
   vp_orb[:,:]=fid.read('vp_orb',start=[iorb1-1,0],count=[mynorb,nt]) 
