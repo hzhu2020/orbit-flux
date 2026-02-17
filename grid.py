@@ -88,7 +88,7 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
 def readf0(xgc,xgc_dir,idx,start_gstep,nsteps,period):
   global df0g,nphi,nmu,nvp
   if (idx==1)or(idx==5)or(idx==6):
-    sname='avgf0'
+    sname='f0'
     if (xgc=='xgc1')and((idx==5)or(idx==6)): sname='avgf0'
     dname='i_f'
   if (idx==2):
