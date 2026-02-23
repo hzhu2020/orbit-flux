@@ -31,7 +31,8 @@ def read(xgc,use_ff,xgc_dir,Nr,Nz):
   guess_count=fid.read('guess_count')
   guess_list=fid.read('guess_list')
   mapping=fid.read('mapping')
-  nd=fid.read('nd_connect_list')
+  nd=fid.read('nd_connect_list') # 0-based C-indexing
+  nd+=1                          # 1-based Fortran-indexing
   fid.close()
 
   fname=xgc_dir+'/xgc.equil.bp'
