@@ -447,7 +447,7 @@ def copy_data(idx,nsteps_loop,iphi):
   from parameters import xgc,use_ff
   global df0g_gpu,nd_gpu,nb_curl_nb_gpu,curlbr_gpu,curlbz_gpu,curlbphi_gpu,\
          basis_gpu,Er_gpu,Ez_gpu,Ephi_gpu,B_gpu,Ti_gpu,rz_gpu,dFdphi_gpu,dFdpara_gpu
-  B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='C')
+  B_gpu=cp.array(grid.B,dtype=cp.float64).ravel(order='F')
   Ti_gpu=cp.array(grid.tempi,dtype=cp.float64)
   rz_gpu=cp.array(grid.rz,dtype=cp.float64).ravel(order='C')
   nd_gpu=cp.array(grid.nd,dtype=cp.int32).ravel(order='C')
